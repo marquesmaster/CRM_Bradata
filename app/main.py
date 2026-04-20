@@ -13,11 +13,11 @@ from app.routers import (
     empresas,
     leads,
     notas,
+    notifications,
     oportunidades,
     pipelines,
     pncp,
     relatorios,
-    tarefas,
     users,
 )
 from app.services.bootstrap import ensure_default_admin, ensure_default_pipeline
@@ -66,7 +66,15 @@ app.include_router(leads.router, prefix=f"{API_PREFIX}/leads", tags=["leads"])
 app.include_router(pipelines.router, prefix=f"{API_PREFIX}/pipelines", tags=["pipelines"])
 app.include_router(oportunidades.router, prefix=f"{API_PREFIX}/oportunidades", tags=["oportunidades"])
 app.include_router(atividades.router, prefix=f"{API_PREFIX}/atividades", tags=["atividades"])
-app.include_router(tarefas.router, prefix=f"{API_PREFIX}/tarefas", tags=["tarefas"])
 app.include_router(notas.router, prefix=f"{API_PREFIX}/notas", tags=["notas"])
+app.include_router(notifications.router, prefix=f"{API_PREFIX}/notifications", tags=["notifications"])
 app.include_router(pncp.router, prefix=f"{API_PREFIX}/pncp", tags=["pncp"])
 app.include_router(relatorios.router, prefix=f"{API_PREFIX}/relatorios", tags=["relatorios"])
+
+# Servir o frontend (SPA) estaticamente
+import os
+from fastapi.staticfiles import StaticFiles
+
+WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web")
+if os.path.isdir(WEB_DIR):
+    app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")

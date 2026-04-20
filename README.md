@@ -149,6 +149,38 @@ Credenciais default do admin (mudar em produção):
 python -m scripts.run_etl_manual --tipos contrato --ufs SP,RJ --keywords "software,TI"
 ```
 
+## Deploy em VPS (Ubuntu/Debian)
+
+O sistema roda numa VPS própria. Recomendação: **Docker Compose + Nginx + Let's Encrypt**.
+
+```bash
+# 1. Dependências
+sudo apt update && sudo apt install -y docker.io docker-compose-plugin nginx certbot python3-certbot-nginx
+
+# 2. Clone + configuração
+git clone <repo> /opt/crm-bradata && cd /opt/crm-bradata
+cp .env.example .env
+# editar .env: SECRET_KEY (openssl rand -hex 32), DATABASE_URL, CNPJ_WS_TOKEN, admin/senha
+
+# 3. Subir serviços
+docker compose up -d --build
+docker compose logs -f api  # confere alembic upgrade head + bootstrap
+
+# 4. Nginx (proxy reverso + HTTPS)
+sudo cp deploy/nginx-crm.conf /etc/nginx/sites-available/crm-bradata
+sudo ln -s /etc/nginx/sites-available/crm-bradata /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d crm.bradata.com.br
+
+# 5. Backup automático Postgres (cron diário 02h)
+sudo crontab -e
+# 0 2 * * * docker exec crm-bradata-db-1 pg_dump -U crm crm_bradata | gzip > /var/backups/crm_$(date +\%F).sql.gz
+```
+
+Firewall mínimo: abrir 80/443 apenas; Postgres só expõe localhost/docker network.
+
+Exemplo Nginx em `deploy/nginx-crm.conf`.
+
 ## Modelo de dados (resumo)
 
 - **users** → BDRs, vendedores, gestores, admin

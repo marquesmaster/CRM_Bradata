@@ -26,6 +26,13 @@ class OrigemEmpresa(str, Enum):
     indicacao = "indicacao"
 
 
+class EmpresaStatus(str, Enum):
+    prospect = "prospect"
+    lead = "lead"
+    cliente = "cliente"
+    inativo = "inativo"
+
+
 class Empresa(Base):
     __tablename__ = "empresas"
 
@@ -40,11 +47,16 @@ class Empresa(Base):
     cnaes_secundarios: Mapped[list | None] = mapped_column(JSON)
     natureza_juridica: Mapped[str | None] = mapped_column(String(120))
     porte: Mapped[str | None] = mapped_column(String(40))
+    sector: Mapped[str | None] = mapped_column(String(80), index=True)
 
     faturamento_estimado: Mapped[float | None] = mapped_column(Float, index=True)
     num_funcionarios: Mapped[int | None] = mapped_column(Integer)
     capital_social: Mapped[float | None] = mapped_column(Float)
     data_abertura: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    ativos_gov: Mapped[int | None] = mapped_column(Integer)
+    ticket_medio: Mapped[float | None] = mapped_column(Float)
+    stack: Mapped[list | None] = mapped_column(JSON)
 
     logradouro: Mapped[str | None] = mapped_column(String(255))
     numero: Mapped[str | None] = mapped_column(String(20))
@@ -60,9 +72,15 @@ class Empresa(Base):
     linkedin_url: Mapped[str | None] = mapped_column(String(255))
 
     is_icp: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    icp_score: Mapped[int | None] = mapped_column(Integer)
+    icp_score: Mapped[int | None] = mapped_column(Integer, index=True)
     icp_motivo: Mapped[str | None] = mapped_column(Text)
 
+    status: Mapped[EmpresaStatus] = mapped_column(
+        SqlEnum(EmpresaStatus, name="empresa_status"),
+        default=EmpresaStatus.prospect,
+        nullable=False,
+        index=True,
+    )
     origem: Mapped[OrigemEmpresa] = mapped_column(
         SqlEnum(OrigemEmpresa, name="origem_empresa"),
         default=OrigemEmpresa.manual,

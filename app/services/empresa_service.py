@@ -28,8 +28,33 @@ def _cnae_is_ti(cnae: str | None) -> bool:
     return False
 
 
+SECTOR_BY_CNAE_PREFIX = {
+    "6201": "Software",
+    "6202": "Software",
+    "6203": "Software",
+    "6209": "Software",
+    "6311": "Cloud / Hosting",
+    "6312": "Portais",
+    "6319": "Serviços de TI",
+    "7020": "Consultoria",
+    "8211": "BPO",
+}
+
+
+def _infer_sector(cnae: str | None) -> str | None:
+    if not cnae:
+        return None
+    digits = "".join(ch for ch in cnae if ch.isdigit())
+    if not digits:
+        return None
+    return SECTOR_BY_CNAE_PREFIX.get(digits[:4])
+
+
 def classify_icp(empresa: Empresa) -> None:
-    """Recalcula is_icp, icp_score e icp_motivo."""
+    """Recalcula is_icp, icp_score, icp_motivo e sector (inferido se vazio)."""
+    if not empresa.sector:
+        empresa.sector = _infer_sector(empresa.cnae_principal)
+
     score = 0
     motivos: list[str] = []
 

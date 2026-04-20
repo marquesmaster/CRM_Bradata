@@ -9,6 +9,7 @@ class PipelineEstagioIn(BaseModel):
     nome: str
     ordem: int
     probabilidade: int = Field(default=10, ge=0, le=100)
+    color: str | None = None
     is_ganho: bool = False
     is_perda: bool = False
 
@@ -47,6 +48,7 @@ class OportunidadeBase(BaseModel):
     data_fechamento_prevista: date | None = None
     descricao: str | None = None
     pncp_numero_controle: str | None = None
+    tags: list[str] | None = None
 
 
 class OportunidadeCreate(OportunidadeBase):
@@ -62,6 +64,7 @@ class OportunidadeUpdate(BaseModel):
     data_fechamento_prevista: date | None = None
     descricao: str | None = None
     owner_id: int | None = None
+    tags: list[str] | None = None
 
 
 class OportunidadeOut(OportunidadeBase):

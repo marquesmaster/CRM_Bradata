@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.empresa import OrigemEmpresa
+from app.models.empresa import EmpresaStatus, OrigemEmpresa
 
 
 def _only_digits(v: str | None) -> str | None:
@@ -21,11 +21,16 @@ class EmpresaBase(BaseModel):
     cnaes_secundarios: list[Any] | None = None
     natureza_juridica: str | None = None
     porte: str | None = None
+    sector: str | None = None
 
     faturamento_estimado: float | None = None
     num_funcionarios: int | None = None
     capital_social: float | None = None
     data_abertura: datetime | None = None
+
+    ativos_gov: int | None = None
+    ticket_medio: float | None = None
+    stack: list[str] | None = None
 
     logradouro: str | None = None
     numero: str | None = None
@@ -53,12 +58,15 @@ class EmpresaBase(BaseModel):
 
 class EmpresaCreate(EmpresaBase):
     origem: OrigemEmpresa = OrigemEmpresa.manual
+    status: EmpresaStatus = EmpresaStatus.prospect
     owner_id: int | None = None
 
 
 class EmpresaUpdate(BaseModel):
     razao_social: str | None = None
     nome_fantasia: str | None = None
+    sector: str | None = None
+    status: EmpresaStatus | None = None
     telefone: str | None = None
     email: str | None = None
     website: str | None = None
@@ -68,6 +76,9 @@ class EmpresaUpdate(BaseModel):
     is_icp: bool | None = None
     faturamento_estimado: float | None = None
     num_funcionarios: int | None = None
+    ativos_gov: int | None = None
+    ticket_medio: float | None = None
+    stack: list[str] | None = None
 
 
 class EmpresaOut(EmpresaBase):
@@ -76,11 +87,15 @@ class EmpresaOut(EmpresaBase):
     is_icp: bool
     icp_score: int | None
     icp_motivo: str | None
+    status: EmpresaStatus
     origem: OrigemEmpresa
     owner_id: int | None
     enriquecida_em: datetime | None
     created_at: datetime
     updated_at: datetime
+
+    contatos_n: int = 0
+    contracts_pncp: int = 0
 
 
 class EmpresaFilter(BaseModel):
@@ -91,5 +106,7 @@ class EmpresaFilter(BaseModel):
     is_icp: bool | None = None
     owner_id: int | None = None
     origem: OrigemEmpresa | None = None
+    status: EmpresaStatus | None = None
     faturamento_min: float | None = None
     cnae_principal: str | None = None
+    sector: str | None = None

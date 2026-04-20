@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     default_admin_email: str = "admin@bradata.com.br"
     default_admin_password: str = "ChangeMe!2026"
 
+    ai_provider: str = "deepseek"
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-chat"
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+
     @property
     def icp_cnaes_ti_list(self) -> list[str]:
         return [c.strip() for c in self.icp_cnaes_ti.split(",") if c.strip()]

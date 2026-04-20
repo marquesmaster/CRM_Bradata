@@ -17,6 +17,7 @@ from app.schemas.pncp import (
     PncpContratoOut,
     PncpResultadoOut,
 )
+from app.services.ai_classifier import classificar_contrato
 from app.services.pncp.compra import (
     ingest_compra_by_contrato,
     ingest_compra_itens,
@@ -130,3 +131,31 @@ def run_etl(payload: EtlRunRequest, bg: BackgroundTasks, _: AdminUser):
     """Dispara o ETL completo em background."""
     bg.add_task(_run_etl_job, payload)
     return {"message": "ETL PNCP agendado em background", "payload": payload.model_dump()}
+
+
+@router.post("/contratos/{contrato_id}/classificar-ia")
+def classificar_contrato_ia(contrato_id: int, db: DBSession, _: CurrentUser):
+    """Roda o classificador IA bodyshop sob demanda."""
+    from datetime import datetime, timezone
+    c = db.get(PncpContrato, contrato_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Contrato PNCP não encontrado")
+    res = classificar_contrato(c.titulo or "", c.descricao or "", c.valor_global)
+    if not res:
+        raise HTTPException(status_code=502, detail="Classificador IA indisponível ou sem API key")
+    c.ai_classificacao = (res.get("classificacao") or "").upper() or None
+    c.ai_confianca = res.get("confianca")
+    c.ai_motivo = res.get("motivo")
+    c.ai_tipo_servico = res.get("tipo_servico")
+    c.ai_oportunidade = res.get("oportunidade_bodyshop")
+    c.ai_processado_em = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(c)
+    return {
+        "id": c.id,
+        "ai_classificacao": c.ai_classificacao,
+        "ai_confianca": c.ai_confianca,
+        "ai_motivo": c.ai_motivo,
+        "ai_tipo_servico": c.ai_tipo_servico,
+        "ai_oportunidade": c.ai_oportunidade,
+    }
