@@ -2,13 +2,35 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import and_, func, or_
 
 from app.core.deps import CurrentUser, DBSession
-from app.models.empresa import Empresa
+from app.models.atividade import Atividade
+from app.models.contato import Contato
+from app.models.empresa import Empresa, EmpresaStatus
+from app.models.nota import Nota
+from app.models.pncp import PncpResultado
+from app.schemas.atividade import AtividadeOut
 from app.schemas.common import Page
 from app.schemas.empresa import EmpresaCreate, EmpresaOut, EmpresaUpdate
-from app.services.empresa_service import classify_icp
+from app.schemas.nota import NotaOut
 from app.services.cnpj_ws import enrich_empresa_from_cnpjws
+from app.services.empresa_service import classify_icp
 
 router = APIRouter()
+
+
+def _serialize(db, empresa: Empresa) -> EmpresaOut:
+    contatos_n = (
+        db.query(func.count(Contato.id)).filter(Contato.empresa_id == empresa.id).scalar() or 0
+    )
+    contracts_pncp = (
+        db.query(func.count(PncpResultado.id))
+        .filter(PncpResultado.empresa_id == empresa.id)
+        .scalar()
+        or 0
+    )
+    out = EmpresaOut.model_validate(empresa)
+    out.contatos_n = int(contatos_n)
+    out.contracts_pncp = int(contracts_pncp)
+    return out
 
 
 @router.get("", response_model=Page[EmpresaOut])
@@ -21,8 +43,10 @@ def list_empresas(
     is_icp: bool | None = None,
     owner_id: int | None = None,
     origem: str | None = None,
+    status_: EmpresaStatus | None = Query(None, alias="status"),
     faturamento_min: float | None = None,
     cnae: str | None = None,
+    sector: str | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
 ):
@@ -43,16 +67,20 @@ def list_empresas(
         filters.append(Empresa.owner_id == owner_id)
     if origem:
         filters.append(Empresa.origem == origem)
+    if status_:
+        filters.append(Empresa.status == status_)
     if faturamento_min is not None:
         filters.append(Empresa.faturamento_estimado >= faturamento_min)
     if cnae:
         filters.append(Empresa.cnae_principal == cnae)
+    if sector:
+        filters.append(Empresa.sector == sector)
     if filters:
         query = query.filter(and_(*filters))
 
     total = query.with_entities(func.count(Empresa.id)).scalar() or 0
     items = query.order_by(Empresa.razao_social).offset((page - 1) * size).limit(size).all()
-    return Page[EmpresaOut](items=items, total=total, page=page, size=size)
+    return Page[EmpresaOut](items=[_serialize(db, e) for e in items], total=total, page=page, size=size)
 
 
 @router.get("/{empresa_id}", response_model=EmpresaOut)
@@ -60,7 +88,7 @@ def get_empresa(empresa_id: int, db: DBSession, _: CurrentUser):
     empresa = db.get(Empresa, empresa_id)
     if not empresa:
         raise HTTPException(status_code=404, detail="Empresa não encontrada")
-    return empresa
+    return _serialize(db, empresa)
 
 
 @router.post("", response_model=EmpresaOut, status_code=status.HTTP_201_CREATED)
@@ -75,7 +103,7 @@ def create_empresa(payload: EmpresaCreate, db: DBSession, current: CurrentUser):
     db.add(empresa)
     db.commit()
     db.refresh(empresa)
-    return empresa
+    return _serialize(db, empresa)
 
 
 @router.patch("/{empresa_id}", response_model=EmpresaOut)
@@ -88,7 +116,7 @@ def update_empresa(empresa_id: int, payload: EmpresaUpdate, db: DBSession, _: Cu
     classify_icp(empresa)
     db.commit()
     db.refresh(empresa)
-    return empresa
+    return _serialize(db, empresa)
 
 
 @router.delete("/{empresa_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -109,4 +137,57 @@ def enriquecer_empresa(empresa_id: int, db: DBSession, _: CurrentUser):
     classify_icp(empresa)
     db.commit()
     db.refresh(empresa)
-    return empresa
+    return _serialize(db, empresa)
+
+
+@router.get("/{empresa_id}/timeline")
+def empresa_timeline(empresa_id: int, db: DBSession, _: CurrentUser, limit: int = 50):
+    empresa = db.get(Empresa, empresa_id)
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+    atividades = (
+        db.query(Atividade)
+        .filter(Atividade.empresa_id == empresa_id)
+        .order_by(Atividade.data_atividade.desc().nullslast(), Atividade.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    notas = (
+        db.query(Nota)
+        .filter(Nota.empresa_id == empresa_id)
+        .order_by(Nota.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    items = []
+    for a in atividades:
+        items.append({"kind": "atividade", "id": a.id, "data": AtividadeOut.model_validate(a).model_dump(), "ts": a.data_atividade or a.created_at})
+    for n in notas:
+        items.append({"kind": "nota", "id": n.id, "data": NotaOut.model_validate(n).model_dump(), "ts": n.created_at})
+    items.sort(key=lambda x: x["ts"], reverse=True)
+    return items[:limit]
+
+
+@router.get("/{empresa_id}/pncp")
+def empresa_pncp_history(empresa_id: int, db: DBSession, _: CurrentUser):
+    empresa = db.get(Empresa, empresa_id)
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+    rows = (
+        db.query(PncpResultado)
+        .filter(PncpResultado.empresa_id == empresa_id)
+        .order_by(PncpResultado.data_resultado.desc().nullslast())
+        .limit(200)
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "numero_controle_pncp_compra": r.numero_controle_pncp_compra,
+            "fornecedor": r.nome_razao_social_fornecedor,
+            "valor_total_homologado": r.valor_total_homologado,
+            "data_resultado": r.data_resultado,
+            "situacao": r.situacao_nome,
+        }
+        for r in rows
+    ]

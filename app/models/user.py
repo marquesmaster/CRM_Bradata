@@ -15,6 +15,12 @@ class UserRole(str, Enum):
     leitor = "leitor"
 
 
+class UserStatus(str, Enum):
+    ativo = "ativo"
+    inativo = "inativo"
+    pendente = "pendente"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -25,7 +31,15 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(
         SqlEnum(UserRole, name="user_role"), default=UserRole.bdr, nullable=False
     )
+    status: Mapped[UserStatus] = mapped_column(
+        SqlEnum(UserStatus, name="user_status"),
+        default=UserStatus.ativo,
+        nullable=False,
+        index=True,
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    team: Mapped[str | None] = mapped_column(String(60), index=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -62,6 +62,13 @@ class PncpContrato(Base):
     itens_processados: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     resultados_processados: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
+    ai_classificacao: Mapped[str | None] = mapped_column(String(10), index=True)
+    ai_confianca: Mapped[float | None] = mapped_column(Float)
+    ai_motivo: Mapped[str | None] = mapped_column(Text)
+    ai_tipo_servico: Mapped[str | None] = mapped_column(String(60), index=True)
+    ai_oportunidade: Mapped[str | None] = mapped_column(Text)
+    ai_processado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     raw_json: Mapped[dict | None] = mapped_column(JSON)
     detalhe_json: Mapped[dict | None] = mapped_column(JSON)
 

@@ -4,12 +4,11 @@ from fastapi import APIRouter, Query
 from sqlalchemy import func
 
 from app.core.deps import CurrentUser, DBSession
-from app.models.atividade import Atividade
+from app.models.atividade import Atividade, AtividadeStatus
 from app.models.empresa import Empresa
 from app.models.lead import Lead, LeadStatus
 from app.models.oportunidade import Oportunidade, OportunidadeStatus, Pipeline, PipelineEstagio
 from app.models.pncp import PncpContrato, PncpResultado
-from app.models.tarefa import Tarefa, TarefaStatus
 from app.models.user import User
 
 router = APIRouter()
@@ -42,7 +41,10 @@ def dashboard(db: DBSession, _: CurrentUser):
         or 0
     )
     tarefas_abertas = (
-        db.query(func.count(Tarefa.id)).filter(Tarefa.status != TarefaStatus.concluida).scalar() or 0
+        db.query(func.count(Atividade.id))
+        .filter(Atividade.status != AtividadeStatus.concluida, Atividade.due_date.isnot(None))
+        .scalar()
+        or 0
     )
     return {
         "empresas": {"total": total_empresas, "icp": total_empresas_icp},

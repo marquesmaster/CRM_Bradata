@@ -8,6 +8,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -55,6 +56,7 @@ class PipelineEstagio(Base):
     nome: Mapped[str] = mapped_column(String(120), nullable=False)
     ordem: Mapped[int] = mapped_column(Integer, nullable=False)
     probabilidade: Mapped[int] = mapped_column(Integer, default=10)
+    color: Mapped[str | None] = mapped_column(String(20))
     is_ganho: Mapped[bool] = mapped_column(default=False)
     is_perda: Mapped[bool] = mapped_column(default=False)
 
@@ -90,6 +92,7 @@ class Oportunidade(Base):
     descricao: Mapped[str | None] = mapped_column(Text)
 
     pncp_numero_controle: Mapped[str | None] = mapped_column(String(60), index=True)
+    tags: Mapped[list | None] = mapped_column(JSON)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

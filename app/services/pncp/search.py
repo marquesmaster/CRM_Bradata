@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.models.pncp import PncpContrato
 from app.services.pncp.client import PncpClient
 from app.services.pncp.parser import parse_iso_date, parse_iso_datetime, safe_float
+from app.services.pncp.prefilter import passa_prefiltro
 
 log = logging.getLogger("pncp.search")
 
@@ -80,6 +81,7 @@ def search_pncp_contratos(
     status: str = "vigente",
     tam_pagina: int = 500,
     max_paginas: int | None = None,
+    prefilter_cfg: dict | None = None,
 ) -> dict:
     """Executa a busca paginada do PNCP. Faz upsert na tabela pncp_contratos."""
     keywords_list = list(keywords) if keywords else [""]
@@ -125,6 +127,8 @@ def search_pncp_contratos(
 
                 for item in data.get("items", []):
                     total_processados += 1
+                    if prefilter_cfg and not passa_prefiltro(item, prefilter_cfg):
+                        continue
                     if _upsert_contrato(db, item):
                         total_novos += 1
                 db.commit()
@@ -144,6 +148,8 @@ def search_pncp_contratos(
                         break
                     for item in items:
                         total_processados += 1
+                        if prefilter_cfg and not passa_prefiltro(item, prefilter_cfg):
+                            continue
                         if _upsert_contrato(db, item):
                             total_novos += 1
                     db.commit()
