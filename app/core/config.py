@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
 
+    # Financeiro / analytics
+    commission_rate_percent: float = 10.0    # % do valor de deals ganhos
+    cac_mensal: float = 5000.0               # custo de aquisição médio mensal (R$)
+    ltv_meses_retencao: float = 18.0         # retenção média em meses (proxy LTV)
+
     @property
     def icp_cnaes_ti_list(self) -> list[str]:
         return [c.strip() for c in self.icp_cnaes_ti.split(",") if c.strip()]
