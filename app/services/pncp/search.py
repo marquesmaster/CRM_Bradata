@@ -1,14 +1,17 @@
-"""Etapa 1: Busca de contratos no PNCP via /api/search/."""
+"""Etapa 1: Busca paralela de contratos no PNCP via /api/search/."""
 from __future__ import annotations
 
 import logging
 import math
+import threading
 from typing import Iterable
 
 from sqlalchemy.orm import Session
 
+from app.core.database import SessionLocal
 from app.models.pncp import PncpContrato
 from app.services.pncp.client import PncpClient
+from app.services.pncp.concurrency import run_parallel
 from app.services.pncp.parser import parse_iso_date, parse_iso_datetime, safe_float
 from app.services.pncp.prefilter import passa_prefiltro
 
@@ -19,7 +22,6 @@ MAX_ITENS_API = 10_000
 
 
 def _upsert_contrato(db: Session, item: dict) -> bool:
-    """Retorna True se foi inserido, False se já existia."""
     numero_controle = item.get("numero_controle_pncp")
     if not numero_controle:
         return False
@@ -72,6 +74,93 @@ def _upsert_contrato(db: Session, item: dict) -> bool:
     return True
 
 
+def _search_one_combo(
+    kw: str,
+    uf: str | None,
+    *,
+    tipos_documento: str,
+    status: str,
+    tam_pagina: int,
+    max_paginas: int | None,
+    prefilter_cfg: dict | None,
+    totals_lock: threading.Lock,
+    totals: dict,
+) -> None:
+    """Processa uma combinação (keyword, UF): página 1 + as demais."""
+    max_paginas_api = math.ceil(MAX_ITENS_API / tam_pagina)
+    base_params: dict = {
+        "tipos_documento": tipos_documento,
+        "ordenacao": "-data",
+        "tam_pagina": tam_pagina,
+        "status": status,
+        "pagina": 1,
+    }
+    if kw:
+        base_params["q"] = kw
+    if uf:
+        base_params["ufs"] = uf
+
+    local_novos = 0
+    local_proc = 0
+    local_err = 0
+
+    with PncpClient() as client, SessionLocal() as db:
+        try:
+            data = client.get_json(SEARCH_PATH, params=base_params)
+        except Exception as e:
+            log.warning("Falha pg1 (kw=%r, uf=%r): %s", kw, uf, e)
+            local_err += 1
+            data = None
+
+        if data:
+            total = data.get("total", 0)
+            if total:
+                paginas_total = math.ceil(total / tam_pagina)
+                paginas_a_buscar = min(paginas_total, max_paginas_api)
+                if max_paginas:
+                    paginas_a_buscar = min(paginas_a_buscar, max_paginas)
+
+                for item in data.get("items", []):
+                    local_proc += 1
+                    if prefilter_cfg and not passa_prefiltro(item, prefilter_cfg):
+                        continue
+                    try:
+                        if _upsert_contrato(db, item):
+                            local_novos += 1
+                    except Exception:
+                        db.rollback()
+                db.commit()
+
+                for page in range(2, paginas_a_buscar + 1):
+                    params = dict(base_params, pagina=page)
+                    try:
+                        page_data = client.get_json(SEARCH_PATH, params=params)
+                    except Exception as e:
+                        log.warning("Falha pg%s (kw=%r, uf=%r): %s", page, kw, uf, e)
+                        local_err += 1
+                        continue
+                    if not page_data:
+                        break
+                    items = page_data.get("items", [])
+                    if not items:
+                        break
+                    for item in items:
+                        local_proc += 1
+                        if prefilter_cfg and not passa_prefiltro(item, prefilter_cfg):
+                            continue
+                        try:
+                            if _upsert_contrato(db, item):
+                                local_novos += 1
+                        except Exception:
+                            db.rollback()
+                    db.commit()
+
+    with totals_lock:
+        totals["novos"] += local_novos
+        totals["processados"] += local_proc
+        totals["erros"] += local_err
+
+
 def search_pncp_contratos(
     db: Session,
     *,
@@ -82,76 +171,34 @@ def search_pncp_contratos(
     tam_pagina: int = 500,
     max_paginas: int | None = None,
     prefilter_cfg: dict | None = None,
+    max_workers: int = 8,
 ) -> dict:
-    """Executa a busca paginada do PNCP. Faz upsert na tabela pncp_contratos."""
+    """Executa a busca paginada do PNCP em paralelo por (keyword, UF)."""
     keywords_list = list(keywords) if keywords else [""]
     ufs_list = list(ufs) if ufs else [None]
-    max_paginas_api = math.ceil(MAX_ITENS_API / tam_pagina)
+    combos = [(kw, uf) for kw in keywords_list for uf in ufs_list]
 
-    total_novos = 0
-    total_processados = 0
-    erros = 0
+    totals = {"novos": 0, "processados": 0, "erros": 0}
+    lock = threading.Lock()
 
-    with PncpClient() as client:
-        for kw in keywords_list:
-            for uf in ufs_list:
-                base_params = {
-                    "tipos_documento": tipos_documento,
-                    "ordenacao": "-data",
-                    "tam_pagina": tam_pagina,
-                    "status": status,
-                    "pagina": 1,
-                }
-                if kw:
-                    base_params["q"] = kw
-                if uf:
-                    base_params["ufs"] = uf
+    def worker(combo: tuple[str, str | None]) -> None:
+        kw, uf = combo
+        _search_one_combo(
+            kw, uf,
+            tipos_documento=tipos_documento,
+            status=status,
+            tam_pagina=tam_pagina,
+            max_paginas=max_paginas,
+            prefilter_cfg=prefilter_cfg,
+            totals_lock=lock,
+            totals=totals,
+        )
 
-                try:
-                    data = client.get_json(SEARCH_PATH, params=base_params)
-                except Exception as e:
-                    log.exception("Falha na página 1 (kw=%r, uf=%r): %s", kw, uf, e)
-                    erros += 1
-                    continue
+    log.info("Search PNCP: %s combos, %s workers", len(combos), max_workers)
+    run_parallel(worker, combos, max_workers=max_workers)
 
-                if not data:
-                    continue
-
-                total = data.get("total", 0)
-                if total == 0:
-                    continue
-                paginas_total = math.ceil(total / tam_pagina)
-                paginas_a_buscar = min(paginas_total, max_paginas_api)
-                if max_paginas:
-                    paginas_a_buscar = min(paginas_a_buscar, max_paginas)
-
-                for item in data.get("items", []):
-                    total_processados += 1
-                    if prefilter_cfg and not passa_prefiltro(item, prefilter_cfg):
-                        continue
-                    if _upsert_contrato(db, item):
-                        total_novos += 1
-                db.commit()
-
-                for page in range(2, paginas_a_buscar + 1):
-                    params = dict(base_params, pagina=page)
-                    try:
-                        page_data = client.get_json(SEARCH_PATH, params=params)
-                    except Exception as e:
-                        log.exception("Falha na página %s (kw=%r, uf=%r): %s", page, kw, uf, e)
-                        erros += 1
-                        continue
-                    if not page_data:
-                        break
-                    items = page_data.get("items", [])
-                    if not items:
-                        break
-                    for item in items:
-                        total_processados += 1
-                        if prefilter_cfg and not passa_prefiltro(item, prefilter_cfg):
-                            continue
-                        if _upsert_contrato(db, item):
-                            total_novos += 1
-                    db.commit()
-
-    return {"itens_processados": total_processados, "itens_novos": total_novos, "erros": erros}
+    return {
+        "itens_processados": totals["processados"],
+        "itens_novos": totals["novos"],
+        "erros": totals["erros"],
+    }

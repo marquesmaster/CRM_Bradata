@@ -93,6 +93,10 @@ class EtlRunRequest(BaseModel):
     ufs: list[str] = []
     status: str = "vigente"
     max_paginas: int | None = None
+    max_workers: int = 8
+    detalhe_limit: int | None = 2000
+    classify_with_ai: bool = True
+    enrich_contacts: bool = False
 
 
 class EtlRunResult(BaseModel):

@@ -123,6 +123,10 @@ def _run_etl_job(payload: EtlRunRequest) -> None:
             ufs=payload.ufs or None,
             status=payload.status,
             max_paginas=payload.max_paginas,
+            max_workers=payload.max_workers,
+            detalhe_limit=payload.detalhe_limit,
+            classify_with_ai=payload.classify_with_ai,
+            enrich_contacts=payload.enrich_contacts,
         )
 
 
