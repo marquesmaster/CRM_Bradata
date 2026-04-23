@@ -96,6 +96,9 @@ class EmpresaOut(EmpresaBase):
 
     contatos_n: int = 0
     contracts_pncp: int = 0
+    valor_total_contratos: float = 0.0
+    classificacao_valor: str = "baixo"       # alto | medio | baixo
+    faixa_faturamento: str | None = None     # "Até R$ 81 mil" etc.
 
 
 class EmpresaFilter(BaseModel):

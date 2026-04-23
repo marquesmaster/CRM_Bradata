@@ -18,20 +18,63 @@ from app.services.lusha import enriquecer_empresa as lusha_enriquecer, LushaErro
 router = APIRouter()
 
 
+def _classificacao_por_valor(valor_total: float, ticket_medio: float | None) -> str:
+    """alto/medio/baixo baseado em valor total de contratos PNCP ganhos."""
+    v = float(valor_total or 0)
+    if v >= 10_000_000 or (ticket_medio and ticket_medio >= 1_000_000):
+        return "alto"
+    if v >= 1_000_000 or (ticket_medio and ticket_medio >= 200_000):
+        return "medio"
+    return "baixo"
+
+
+def _faixa_faturamento(faturamento: float | None) -> str | None:
+    if faturamento is None:
+        return None
+    if faturamento <= 81_000:
+        return "Até R$ 81 mil"
+    if faturamento <= 360_000:
+        return "R$ 81 mil - R$ 360 mil"
+    if faturamento <= 4_800_000:
+        return "R$ 360 mil - R$ 4,8 milhões"
+    if faturamento <= 300_000_000:
+        return "R$ 4,8 milhões - R$ 300 milhões"
+    return "Acima de R$ 300 milhões"
+
+
 def _serialize(db, empresa: Empresa) -> EmpresaOut:
     contatos_n = (
         db.query(func.count(Contato.id)).filter(Contato.empresa_id == empresa.id).scalar() or 0
     )
-    contracts_pncp = (
-        db.query(func.count(PncpResultado.id))
+    contracts_pncp, valor_total = (
+        db.query(
+            func.count(PncpResultado.id),
+            func.coalesce(func.sum(PncpResultado.valor_total_homologado), 0),
+        )
         .filter(PncpResultado.empresa_id == empresa.id)
-        .scalar()
-        or 0
-    )
+        .first()
+    ) or (0, 0)
     out = EmpresaOut.model_validate(empresa)
     out.contatos_n = int(contatos_n)
-    out.contracts_pncp = int(contracts_pncp)
+    out.contracts_pncp = int(contracts_pncp or 0)
+    out.valor_total_contratos = float(valor_total or 0)
+    out.classificacao_valor = _classificacao_por_valor(valor_total, empresa.ticket_medio)
+    out.faixa_faturamento = _faixa_faturamento(empresa.faturamento_estimado)
     return out
+
+
+@router.get("/setores")
+def list_setores(db: DBSession, _: CurrentUser):
+    """Lista setores distintos das empresas para filtros de UI."""
+    rows = (
+        db.query(Empresa.sector)
+        .filter(Empresa.sector.isnot(None))
+        .distinct()
+        .order_by(Empresa.sector)
+        .all()
+    )
+    setores = [r[0] for r in rows if r[0]]
+    return {"setores": setores}
 
 
 @router.get("", response_model=Page[EmpresaOut])

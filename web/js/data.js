@@ -167,6 +167,11 @@
       contactsN: e.contatos_n || 0,
       score: e.icp_score || 0,
       status: e.status || 'prospect',
+      // Campos computed do backend para tela Fornecedores
+      totalContratos: e.contracts_pncp || 0,
+      valorTotalContratos: e.valor_total_contratos || 0,
+      classificacao: e.classificacao_valor || 'baixo',
+      faixa_faturamento: e.faixa_faturamento || null,
     }));
     const COMPANIES = {};
     COMPANY_LIST.forEach(c => { COMPANIES[c.id] = c; });
