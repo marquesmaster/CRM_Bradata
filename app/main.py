@@ -9,14 +9,17 @@ from app.core.database import SessionLocal
 from app.routers import (
     atividades,
     auth,
+    automacoes,
     contatos,
     empresas,
+    etl_runs,
     leads,
     notas,
     notifications,
     oportunidades,
     pipelines,
     pncp,
+    propostas,
     relatorios,
     users,
 )
@@ -69,6 +72,9 @@ app.include_router(atividades.router, prefix=f"{API_PREFIX}/atividades", tags=["
 app.include_router(notas.router, prefix=f"{API_PREFIX}/notas", tags=["notas"])
 app.include_router(notifications.router, prefix=f"{API_PREFIX}/notifications", tags=["notifications"])
 app.include_router(pncp.router, prefix=f"{API_PREFIX}/pncp", tags=["pncp"])
+app.include_router(etl_runs.router, prefix=f"{API_PREFIX}/etl/runs", tags=["etl"])
+app.include_router(automacoes.router, prefix=f"{API_PREFIX}/automacoes", tags=["automacoes"])
+app.include_router(propostas.router, prefix=f"{API_PREFIX}/propostas", tags=["propostas"])
 app.include_router(relatorios.router, prefix=f"{API_PREFIX}/relatorios", tags=["relatorios"])
 
 # Servir o frontend (SPA) estaticamente

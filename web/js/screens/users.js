@@ -83,7 +83,7 @@ function Profile() {
         </div>
       </div>
       <div className="grid-4" style={{marginBottom:'var(--gap)'}}>
-        <div className="kpi"><div className="label">Deals ativos</div><div className="value">{myDeals.filter(d=>d.stage!=='ganho').length}</div></div>
+        <div className="kpi"><div className="label">Deals ativos</div><div className="value">{myDeals.length}</div></div>
         <div className="kpi"><div className="label">Ganhos</div><div className="value">{u.won}</div></div>
         <div className="kpi"><div className="label">Receita</div><div className="value">{fmt.brlK(u.revenue)}</div></div>
         <div className="kpi"><div className="label">Win rate</div><div className="value">{u.deals?Math.round((u.won/u.deals)*100):0}%</div></div>

@@ -25,7 +25,7 @@ DEFAULTS: dict[str, Any] = {
     "tipos_documento": "contrato",
     "status": "vigente",
     "tam_pagina": 500,
-    "max_paginas": 10,
+    "max_paginas": 100,
     # KEYWORDS focadas em bodyshop / staff augmentation / fábrica de software
     "keywords": [
         # Genéricas — alocação / staff augmentation

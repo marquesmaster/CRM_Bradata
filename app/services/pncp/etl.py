@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.models.empresa import Empresa, OrigemEmpresa
+from app.models.etl_run import EtlRun, EtlRunStatus
 from app.models.pncp import PncpContrato, PncpResultado
 from app.services.ai_classifier import classificar_contrato
 from app.services.contact_finder import enrich_contatos_empresa
@@ -148,15 +149,38 @@ def run_full_etl(
     ufs: Iterable[str] | None = None,
     status: str | None = None,
     max_paginas: int | None = None,
-    detalhe_limit: int | None = 2000,
+    detalhe_limit: int | None = 10_000,
     use_prospect_config: bool = True,
     classify_with_ai: bool = True,
     enrich_contacts: bool = False,
-    max_workers: int = 8,
+    max_workers: int = 10,
+    triggered_by_id: int | None = None,
 ) -> dict:
     """Roda o ETL completo em paralelo e retorna um resumo."""
     iniciado = datetime.now(timezone.utc)
     log.info("ETL PNCP iniciado em %s (workers=%s)", iniciado.isoformat(), max_workers)
+
+    # Registra início no DB
+    run = EtlRun(
+        tipo="pncp_full",
+        status=EtlRunStatus.running,
+        iniciado_em=iniciado,
+        payload={
+            "tipos_documento": tipos_documento,
+            "keywords_count": len(list(keywords)) if keywords else None,
+            "ufs": list(ufs) if ufs else None,
+            "status": status,
+            "max_paginas": max_paginas,
+            "detalhe_limit": detalhe_limit,
+            "max_workers": max_workers,
+            "classify_with_ai": classify_with_ai,
+            "enrich_contacts": enrich_contacts,
+        },
+        triggered_by_id=triggered_by_id,
+    )
+    db.add(run)
+    db.commit()
+    run_id = run.id
 
     cfg = config_prospect.load() if use_prospect_config else {}
     tipos_documento = tipos_documento or cfg.get("tipos_documento", "contrato")
@@ -186,6 +210,13 @@ def run_full_etl(
     ids = [row[0] for row in pendentes_query.all()]
     log.info("Processando %s contratos em paralelo", len(ids))
 
+    # Atualiza o run com total a processar
+    run = db.get(EtlRun, run_id)
+    if run:
+        run.contratos_a_processar = len(ids)
+        run.itens_novos = search_res.get("itens_novos", 0)
+        db.commit()
+
     totals = {
         "detalhe": 0,
         "ai": 0,
@@ -205,13 +236,19 @@ def run_full_etl(
         for k in totals:
             totals[k] += int(r.get(k, 0)) if not isinstance(r.get(k), bool) else (1 if r.get(k) else 0)
 
-    ok, err = run_parallel(worker, ids, max_workers=max_workers)
+    ok, err, mensagem_erro = 0, 0, None
+    try:
+        ok, err = run_parallel(worker, ids, max_workers=max_workers)
+    except Exception as e:
+        log.exception("ETL erro global: %s", e)
+        mensagem_erro = str(e)
 
     finalizado = datetime.now(timezone.utc)
+    duracao = (finalizado - iniciado).total_seconds()
     resumo = {
         "iniciado_em": iniciado,
         "finalizado_em": finalizado,
-        "duracao_seg": (finalizado - iniciado).total_seconds(),
+        "duracao_seg": duracao,
         "search": search_res,
         "contratos_a_processar": len(ids),
         "contratos_ok": ok,
@@ -225,5 +262,20 @@ def run_full_etl(
         "empresas_enriquecidas_contato": totals["enriquecidas"],
         "max_workers": max_workers,
     }
+    # Finaliza o run no DB
+    run = db.get(EtlRun, run_id)
+    if run:
+        run.finalizado_em = finalizado
+        run.duracao_seg = duracao
+        run.status = EtlRunStatus.error if mensagem_erro else EtlRunStatus.done
+        run.mensagem_erro = mensagem_erro
+        run.contratos_ok = ok
+        run.contratos_com_erro = err
+        run.ai_processados = totals["ai"]
+        run.empresas_sincronizadas = totals["empresas"]
+        # payload tem que ser JSON-serializable
+        safe_resumo = {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in resumo.items()}
+        run.resumo = safe_resumo
+        db.commit()
     log.info("ETL PNCP finalizado: %s", resumo)
     return resumo

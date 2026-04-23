@@ -114,7 +114,7 @@ def list_resultados(item_id: int, db: DBSession, _: CurrentUser):
     )
 
 
-def _run_etl_job(payload: EtlRunRequest) -> None:
+def _run_etl_job(payload: EtlRunRequest, triggered_by_id: int | None = None) -> None:
     with SessionLocal() as db:
         run_full_etl(
             db,
@@ -127,13 +127,14 @@ def _run_etl_job(payload: EtlRunRequest) -> None:
             detalhe_limit=payload.detalhe_limit,
             classify_with_ai=payload.classify_with_ai,
             enrich_contacts=payload.enrich_contacts,
+            triggered_by_id=triggered_by_id,
         )
 
 
 @router.post("/etl/run")
-def run_etl(payload: EtlRunRequest, bg: BackgroundTasks, _: AdminUser):
+def run_etl(payload: EtlRunRequest, bg: BackgroundTasks, current: AdminUser):
     """Dispara o ETL completo em background."""
-    bg.add_task(_run_etl_job, payload)
+    bg.add_task(_run_etl_job, payload, current.id)
     return {"message": "ETL PNCP agendado em background", "payload": payload.model_dump()}
 
 
