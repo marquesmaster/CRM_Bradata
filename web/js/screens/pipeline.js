@@ -3,7 +3,8 @@ function Pipeline() {
   const [deals, setDeals] = React.useState(DEALS);
   const [dragId, setDragId] = React.useState(null);
   const [dragOver, setDragOver] = React.useState(null);
-  const total = deals.filter(d=>d.stage!=='ganho').reduce((s,d)=>s+d.value,0);
+  const _ganhoIds = new Set(STAGES.filter(s=>s.is_ganho).map(s=>s.id));
+  const total = deals.filter(d=>!_ganhoIds.has(d.stage)).reduce((s,d)=>s+(d.value||0),0);
 
   const onDrop = (stage) => {
     if (!dragId) return;

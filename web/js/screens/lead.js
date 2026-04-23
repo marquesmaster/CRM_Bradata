@@ -1,9 +1,20 @@
 function LeadDetail({ companyId, onBack }) {
   const { fmt, COMPANIES, PNCP_CONTRACTS, DEALS } = window.DATA;
   const c = COMPANIES[companyId] || Object.values(COMPANIES)[0];
+  if (!c) {
+    return (
+      <div className="page-head">
+        <div>
+          <button className="btn btn-xs btn-ghost" onClick={onBack}>Voltar</button>
+          <h1 className="page-title">Nenhuma empresa selecionada</h1>
+          <div className="page-sub">Abra a aba Contas para escolher um lead.</div>
+        </div>
+      </div>
+    );
+  }
   const contracts = PNCP_CONTRACTS.filter(p => p.cnpj_fornecedor === c.cnpj);
-  const deals = DEALS.filter(d => d.company === c.id);
-  const totalPncp = contracts.reduce((s,p)=>s+p.valor,0);
+  const deals = DEALS.filter(d => String(d.company) === String(c.id));
+  const totalPncp = contracts.reduce((s,p)=>s+(p.valor||0),0);
 
   return (
     <>

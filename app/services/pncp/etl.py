@@ -148,11 +148,11 @@ def run_full_etl(
     ufs: Iterable[str] | None = None,
     status: str | None = None,
     max_paginas: int | None = None,
-    detalhe_limit: int | None = 2000,
+    detalhe_limit: int | None = 10_000,
     use_prospect_config: bool = True,
     classify_with_ai: bool = True,
     enrich_contacts: bool = False,
-    max_workers: int = 8,
+    max_workers: int = 10,
 ) -> dict:
     """Roda o ETL completo em paralelo e retorna um resumo."""
     iniciado = datetime.now(timezone.utc)

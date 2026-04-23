@@ -1,26 +1,96 @@
-// Mock data — usado enquanto a integração com a API REST não está plugada.
-// Para conectar ao backend, troque cada chave por fetch('/api/v1/...').
+// API client + loaders + formatters.
+// window.DATA é populado por loadAll() que faz fetch autenticado à API.
+// Se o usuário não estiver logado, window.DATA fica com um mock mínimo pra
+// UI não quebrar. A tela de login popula o JWT e recarrega.
+
 (function () {
-  const fmt = {
-    brl: (v) => (v == null ? '—' : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })),
-    brlK: (v) => {
-      if (v == null) return '—';
-      if (v >= 1_000_000_000) return 'R$ ' + (v / 1_000_000_000).toFixed(1) + 'Bi';
-      if (v >= 1_000_000) return 'R$ ' + (v / 1_000_000).toFixed(1) + 'M';
-      if (v >= 1_000) return 'R$ ' + (v / 1_000).toFixed(0) + 'k';
-      return 'R$ ' + v.toFixed(0);
+  const TOKEN_KEY = 'bradata-crm-token';
+  const USER_KEY = 'bradata-crm-user';
+  const API_PREFIX = '/api/v1';
+
+  // ================== auth ==================
+  const auth = {
+    token: () => localStorage.getItem(TOKEN_KEY),
+    user: () => {
+      try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); }
+      catch { return null; }
     },
-    num: (v) => (v == null ? '—' : v.toLocaleString('pt-BR')),
+    setSession: (token, user) => {
+      localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(USER_KEY, JSON.stringify(user));
+    },
+    clear: () => {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+    },
+    isAuthed: () => !!localStorage.getItem(TOKEN_KEY),
+  };
+
+  async function api(path, opts = {}) {
+    const token = auth.token();
+    const headers = {
+      'Accept': 'application/json',
+      ...(opts.body && typeof opts.body === 'object' ? { 'Content-Type': 'application/json' } : {}),
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      ...(opts.headers || {}),
+    };
+    const body = opts.body && typeof opts.body === 'object'
+      ? JSON.stringify(opts.body)
+      : opts.body;
+    const r = await fetch(API_PREFIX + path, { ...opts, headers, body });
+    if (r.status === 401) {
+      auth.clear();
+      location.reload();
+      return;
+    }
+    if (!r.ok) {
+      const text = await r.text().catch(() => '');
+      throw new Error(`${r.status} ${path}: ${text.slice(0, 200)}`);
+    }
+    if (r.status === 204) return null;
+    const ct = r.headers.get('content-type') || '';
+    return ct.includes('application/json') ? r.json() : r.text();
+  }
+
+  async function login(email, senha) {
+    const r = await fetch(API_PREFIX + '/auth/login-json', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, senha }),
+    });
+    if (!r.ok) throw new Error('Credenciais inválidas');
+    const data = await r.json();
+    auth.setSession(data.access_token, data.user);
+    return data.user;
+  }
+
+  // ================== formatters ==================
+  const fmt = {
+    brl: (v) => v == null ? '—' :
+      new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(+v),
+    brlK: (v) => {
+      if (v == null || v === 0) return v === 0 ? 'R$ 0' : '—';
+      const n = +v;
+      if (Math.abs(n) >= 1e9) return 'R$ ' + (n / 1e9).toFixed(1) + 'Bi';
+      if (Math.abs(n) >= 1e6) return 'R$ ' + (n / 1e6).toFixed(1) + 'MM';
+      if (Math.abs(n) >= 1e3) return 'R$ ' + (n / 1e3).toFixed(0) + 'k';
+      return 'R$ ' + n.toFixed(0);
+    },
+    num: (v) => v == null ? '—' : new Intl.NumberFormat('pt-BR').format(+v),
     cnpj: (c) => {
       if (!c) return '';
-      const d = String(c).padStart(14, '0');
+      const d = String(c).replace(/\D/g, '').padStart(14, '0');
       return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12,14)}`;
     },
-    date: (s) => (s ? new Date(s).toLocaleDateString('pt-BR') : '—'),
+    date: (s) => {
+      if (!s) return '—';
+      try { return new Date(s).toLocaleDateString('pt-BR'); } catch { return s; }
+    },
     relative: (s) => {
       if (!s) return '—';
       const ms = Date.now() - new Date(s).getTime();
       const min = Math.floor(ms / 60000);
+      if (min < 1) return 'agora';
       if (min < 60) return `há ${min} min`;
       const h = Math.floor(min / 60);
       if (h < 24) return `há ${h}h`;
@@ -30,73 +100,181 @@
     },
   };
 
+  // ================== static config ==================
   const ROLES = {
-    master: { id: 'master', label: 'Master', color: '#7C3AED', descr: 'Acesso total ao sistema, billing, time e configurações.', perms: ['Gerenciar todos os usuários', 'Configurar integrações', 'Acesso a billing', 'Promover/rebaixar Masters'] },
-    admin:  { id: 'admin',  label: 'Admin',  color: '#0EA5E9', descr: 'Gerencia time, pipelines e relatórios. Sem acesso a billing.', perms: ['Convidar usuários', 'Editar pipelines', 'Ver relatórios completos', 'Configurar PNCP'] },
-    comum:  { id: 'comum',  label: 'Usuário', color: '#10B981', descr: 'Trabalha leads e oportunidades atribuídos.', perms: ['Ver leads atribuídos', 'Criar atividades', 'Mover deals no próprio pipeline', 'Comentar e anotar'] },
+    master:  { id: 'master', label: 'Master', color: '#7C3AED', descr: 'Acesso total.', perms: ['Gerenciar todos usuários', 'Configurar integrações', 'Acesso a billing'] },
+    admin:   { id: 'admin', label: 'Admin', color: '#0EA5E9', descr: 'Gestor da operação.', perms: ['Gerenciar usuários comuns', 'Configurar pipelines', 'Ver todos relatórios'] },
+    gestor:  { id: 'gestor', label: 'Gestor', color: '#0EA5E9', descr: 'Líder de time.', perms: ['Ver time completo', 'Aprovar oportunidades', 'Editar empresas'] },
+    bdr:     { id: 'bdr', label: 'BDR', color: '#10B981', descr: 'Prospecção e qualificação.', perms: ['Ver leads', 'Criar leads', 'Criar atividades'] },
+    vendedor:{ id: 'vendedor', label: 'Vendedor', color: '#F59E0B', descr: 'Venda e fechamento.', perms: ['Gerenciar oportunidades', 'Editar empresas'] },
+    leitor:  { id: 'leitor', label: 'Leitor', color: '#6B7280', descr: 'Somente leitura.', perms: ['Ver dashboards'] },
+    comum:   { id: 'comum', label: 'Usuário', color: '#10B981', descr: 'Usuário padrão.', perms: ['Ver leads', 'Criar atividades'] },
   };
 
-  const CURRENT_USER = {
-    id: 'u1', name: 'Rafael Marques', email: 'rafael@bradata.com.br',
-    role: 'master', team: 'Sales', status: 'ativo',
-    createdAt: '2025-09-12', lastSeen: new Date().toISOString(),
-    deals: 6, won: 3, revenue: 6_100_000,
+  const STAGE_COLORS = {
+    'Prospecção': '#3B82F6',
+    'Qualificação': '#06B6D4',
+    'Descoberta / Diagnóstico': '#8B5CF6',
+    'Proposta': '#F59E0B',
+    'Negociação': '#EF6C00',
+    'Ganho': '#10B981',
+    'Perda': '#EF4444',
   };
 
-  const USERS = [
-    CURRENT_USER,
-    { id: 'u2', name: 'Amanda Costa', email: 'amanda@bradata.com.br', role: 'admin', team: 'Sales', status: 'ativo', createdAt: '2025-10-04', lastSeen: new Date(Date.now() - 1000 * 60 * 22).toISOString(), deals: 8, won: 5, revenue: 9_200_000 },
-    { id: 'u3', name: 'Tiago Alencar', email: 'tiago@bradata.com.br', role: 'comum', team: 'SDR',   status: 'ativo', createdAt: '2025-11-12', lastSeen: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(), deals: 4, won: 2, revenue: 3_400_000 },
-    { id: 'u4', name: 'Bianca Lima',   email: 'bianca@bradata.com.br', role: 'comum', team: 'SDR',   status: 'pendente', createdAt: '2026-04-12', lastSeen: null, deals: 0, won: 0, revenue: 0 },
-  ];
+  // ================== loaders ==================
+  async function loadAll() {
+    const [me, empresasPage, contratosPage, dealsPage, activitiesPage, pipelines, users] = await Promise.all([
+      api('/users/me'),
+      api('/empresas?size=200').catch(() => ({ items: [] })),
+      api('/pncp/contratos?size=30').catch(() => ({ items: [] })),
+      api('/oportunidades?size=200').catch(() => ({ items: [] })),
+      api('/atividades?size=100').catch(() => ({ items: [] })),
+      api('/pipelines').catch(() => []),
+      api('/users').catch(() => []),
+    ]);
 
-  const STAGES = [
-    { id: 'prospect',     label: 'Prospecção',  color: '#3B82F6' },
-    { id: 'qualificacao', label: 'Qualificação', color: '#06B6D4' },
-    { id: 'proposta',     label: 'Proposta',     color: '#F59E0B' },
-    { id: 'negociacao',   label: 'Negociação',   color: '#EF6C00' },
-    { id: 'ganho',        label: 'Ganho',        color: '#10B981' },
-  ];
+    const pipeline = (pipelines && pipelines[0]) || { estagios: [] };
+    const STAGES = (pipeline.estagios || [])
+      .slice()
+      .sort((a, b) => a.ordem - b.ordem)
+      .map(e => ({
+        id: String(e.id),
+        label: e.nome,
+        color: e.color || STAGE_COLORS[e.nome] || '#6B7280',
+        ordem: e.ordem,
+        is_ganho: e.is_ganho,
+        is_perda: e.is_perda,
+      }));
+    if (STAGES.length === 0) {
+      ['Prospecção','Qualificação','Proposta','Negociação','Ganho'].forEach((l, i) =>
+        STAGES.push({ id: 's' + i, label: l, color: STAGE_COLORS[l] || '#6B7280', ordem: i+1 }));
+    }
 
-  const COMPANIES = {
-    c1: { id: 'c1', name: 'TIVIT', cnpj: '00742594000196', city: 'São Paulo', uf: 'SP', sector: 'Integradora', website: 'tivit.com', revenue: 1_400_000_000, employees: 7800, contractsPncp: 28, ativosGov: 12, score: 92, status: 'lead', stack: ['Java', 'AWS', 'Microservices', '.NET'], ticketMedio: 2_400_000, contactsN: 3 },
-    c2: { id: 'c2', name: 'Stefanini', cnpj: '58069360000175', city: 'Jaguariúna', uf: 'SP', sector: 'Consultoria', website: 'stefanini.com', revenue: 4_200_000_000, employees: 32000, contractsPncp: 41, ativosGov: 18, score: 96, status: 'lead', stack: ['Java', 'SAP', 'Salesforce', 'Cloud'], ticketMedio: 3_100_000, contactsN: 3 },
-    c3: { id: 'c3', name: 'CI&T', cnpj: '00609634000150', city: 'Campinas', uf: 'SP', sector: 'Consultoria', website: 'ciandt.com', revenue: 2_100_000_000, employees: 6800, contractsPncp: 9, ativosGov: 4, score: 88, status: 'prospect', stack: ['Node', 'React', 'AWS', 'AI'], ticketMedio: 1_800_000, contactsN: 2 },
-    c4: { id: 'c4', name: 'Everis Brasil', cnpj: '00000000000100', city: 'São Paulo', uf: 'SP', sector: 'Integradora', website: 'nttdata.com', revenue: 980_000_000, employees: 4200, contractsPncp: 14, ativosGov: 9, score: 84, status: 'cliente', stack: ['SAP', 'Java', 'AI'], ticketMedio: 1_400_000, contactsN: 3 },
-    c5: { id: 'c5', name: 'SERPRO', cnpj: '33683111000107', city: 'Brasília', uf: 'DF', sector: 'Estatal', website: 'serpro.gov.br', revenue: 3_200_000_000, employees: 9200, contractsPncp: 67, ativosGov: 67, score: 76, status: 'lead', stack: ['Java', 'Linux', 'Postgres'], ticketMedio: 4_200_000, contactsN: 2 },
+    const COMPANY_LIST = (empresasPage.items || []).map(e => ({
+      id: String(e.id),
+      name: e.razao_social || e.nome_fantasia || e.cnpj,
+      cnpj: e.cnpj,
+      website: e.website || '',
+      city: e.municipio || '',
+      uf: e.uf || '',
+      sector: e.sector || e.cnae_principal_descricao || '—',
+      revenue: e.faturamento_estimado || 0,
+      employees: e.num_funcionarios || 0,
+      contractsPncp: e.contracts_pncp || 0,
+      ativosGov: e.ativos_gov || 0,
+      ticketMedio: e.ticket_medio || 0,
+      stack: e.stack || [],
+      contactsN: e.contatos_n || 0,
+      score: e.icp_score || 0,
+      status: e.status || 'prospect',
+    }));
+    const COMPANIES = {};
+    COMPANY_LIST.forEach(c => { COMPANIES[c.id] = c; });
+
+    const PNCP_CONTRACTS = (contratosPage.items || []).map(p => ({
+      id: String(p.id),
+      numero: p.numero_controle_pncp,
+      orgao: p.orgao_nome,
+      orgao_cnpj: p.orgao_cnpj,
+      objeto: p.descricao || p.titulo || '',
+      valor: p.valor_global || 0,
+      modalidade: p.modalidade_licitacao_nome || '—',
+      publicado: p.data_publicacao_pncp || p.data_assinatura,
+      vigencia: p.data_fim_vigencia ? fmt.date(p.data_fim_vigencia) : '—',
+      cnpj_fornecedor: '',
+      fornecedor: '',
+      uf: p.uf,
+    }));
+
+    const userById = {};
+    (users || []).forEach(u => { userById[u.id] = u; });
+
+    const DEALS = (dealsPage.items || []).map(d => ({
+      id: String(d.id),
+      title: d.titulo,
+      company: String(d.empresa_id),
+      stage: String(d.estagio_id),
+      value: d.valor_estimado || 0,
+      prob: d.probabilidade || 0,
+      closeDate: d.data_fechamento_prevista,
+      owner: (userById[d.owner_id]?.nome) || '—',
+      tags: d.tags || [],
+    }));
+
+    const ACTIVITIES = (activitiesPage.items || []).map(a => ({
+      id: String(a.id),
+      title: a.titulo,
+      type: a.tipo,
+      status: a.status,
+      priority: a.prioridade,
+      owner: (userById[a.user_id]?.nome) || '—',
+      when: a.due_date || a.data_atividade || a.created_at,
+    }));
+
+    const USERS = (users || []).map(u => ({
+      id: String(u.id),
+      name: u.nome,
+      email: u.email,
+      role: u.role,
+      team: u.team || '',
+      status: u.status || (u.is_active ? 'ativo' : 'inativo'),
+      createdAt: u.created_at,
+      lastSeen: u.last_seen_at,
+      deals: 0, won: 0, revenue: 0,
+    }));
+
+    const CURRENT_USER = {
+      id: String(me.id),
+      name: me.nome,
+      email: me.email,
+      role: me.role,
+      team: me.team || 'Bradata',
+      status: me.status,
+      createdAt: me.created_at,
+      deals: 0, won: 0, revenue: 0,
+    };
+    try {
+      const stats = await api('/users/me/stats');
+      if (stats) Object.assign(CURRENT_USER, { deals: stats.deals, won: stats.won, revenue: stats.revenue });
+    } catch { /* sem stats se ainda não tem deals */ }
+
+    return {
+      fmt, ROLES,
+      CURRENT_USER, USERS,
+      COMPANY_LIST, COMPANIES,
+      DEALS, STAGES,
+      ACTIVITIES,
+      PNCP_CONTRACTS,
+      NOTIFICATIONS: [],
+      _pipeline: pipeline,
+    };
+  }
+
+  async function refresh() {
+    window.DATA = await loadAll();
+    if (typeof window.__onDataRefresh === 'function') window.__onDataRefresh();
+    return window.DATA;
+  }
+
+  // Mock mínimo — só pra antes do login ou se a API cair
+  const MOCK = {
+    fmt, ROLES,
+    CURRENT_USER: { id: '0', name: '—', email: '—', role: 'leitor', team: '—', createdAt: new Date().toISOString(), deals: 0, won: 0, revenue: 0 },
+    USERS: [],
+    COMPANY_LIST: [], COMPANIES: {},
+    DEALS: [],
+    STAGES: [
+      { id: 'prospect',     label: 'Prospecção',  color: '#3B82F6' },
+      { id: 'qualificacao', label: 'Qualificação', color: '#06B6D4' },
+      { id: 'proposta',     label: 'Proposta',     color: '#F59E0B' },
+      { id: 'negociacao',   label: 'Negociação',   color: '#EF6C00' },
+      { id: 'ganho',        label: 'Ganho',        color: '#10B981' },
+    ],
+    ACTIVITIES: [],
+    PNCP_CONTRACTS: [],
+    NOTIFICATIONS: [],
   };
 
-  const COMPANY_LIST = Object.values(COMPANIES);
-
-  const DEALS = [
-    { id: 'd1', title: 'Squad AI/ML — TCU',          company: 'c1', stage: 'proposta',     value: 1_200_000, prob: 60, owner: 'Amanda Costa',  closeDate: '2026-05-10', tags: ['squad','ai'] },
-    { id: 'd2', title: 'Bodyshop Java — Stefanini',  company: 'c2', stage: 'negociacao',   value: 2_400_000, prob: 75, owner: 'Rafael Marques', closeDate: '2026-04-30', tags: ['bodyshop','java'] },
-    { id: 'd3', title: 'Sustentação .NET — CI&T',     company: 'c3', stage: 'qualificacao', value:   650_000, prob: 30, owner: 'Tiago Alencar',  closeDate: '2026-06-15', tags: ['sustentação'] },
-    { id: 'd4', title: 'Squad Mobile — TIVIT',       company: 'c1', stage: 'prospect',     value:   980_000, prob: 10, owner: 'Amanda Costa',  closeDate: '2026-07-20', tags: ['mobile'] },
-    { id: 'd5', title: 'Outsourcing Cloud — Everis', company: 'c4', stage: 'ganho',        value: 1_800_000, prob: 100, owner: 'Rafael Marques', closeDate: '2026-04-08', tags: ['cloud'] },
-    { id: 'd6', title: 'Bodyshop QA — SERPRO',       company: 'c5', stage: 'proposta',     value:   720_000, prob: 55, owner: 'Amanda Costa',  closeDate: '2026-05-22', tags: ['qa'] },
-  ];
-
-  const ACTIVITIES = [
-    { id: 'a1', title: 'Call de descoberta — TIVIT', type: 'reuniao', owner: 'Amanda Costa', when: new Date(Date.now() + 1000*60*60*2).toISOString(), status: 'pendente', priority: 'alta' },
-    { id: 'a2', title: 'Enviar proposta — Stefanini', type: 'email',  owner: 'Rafael Marques', when: new Date(Date.now() + 1000*60*30).toISOString(),     status: 'pendente', priority: 'alta' },
-    { id: 'a3', title: 'Follow-up SERPRO',           type: 'whatsapp',owner: 'Amanda Costa', when: new Date(Date.now() + 1000*60*60*5).toISOString(),  status: 'pendente', priority: 'media' },
-    { id: 'a4', title: 'Briefing CI&T',              type: 'reuniao', owner: 'Tiago Alencar', when: new Date(Date.now() + 1000*60*60*24).toISOString(), status: 'pendente', priority: 'media' },
-    { id: 'a5', title: 'Recap Q1 com diretoria',     type: 'reuniao', owner: 'Rafael Marques', when: new Date(Date.now() - 1000*60*60*5).toISOString(),  status: 'concluida', priority: 'media' },
-  ];
-
-  const PNCP_CONTRACTS = [
-    { id: 'p1', orgao: 'TCU',          numero: '0123/2026', objeto: 'Squad de IA/ML para análise de dados orçamentários', fornecedor: 'Everis Brasil', cnpj_fornecedor: '00000000000100', valor: 15_400_000, modalidade: 'Pregão Eletrônico', vigencia: '12 meses', publicado: new Date(Date.now() - 1000*60*60*22).toISOString() },
-    { id: 'p2', orgao: 'INSS',         numero: '0456/2026', objeto: 'Sustentação de sistemas legados Java + integração e-Social', fornecedor: 'TIVIT', cnpj_fornecedor: '00742594000196', valor: 41_200_000, modalidade: 'Pregão Eletrônico', vigencia: '24 meses', publicado: new Date(Date.now() - 1000*60*60*48).toISOString() },
-    { id: 'p3', orgao: 'BNDES',        numero: '0789/2026', objeto: 'Fábrica de software ágil — squads multidisciplinares', fornecedor: 'Stefanini', cnpj_fornecedor: '58069360000175', valor: 28_900_000, modalidade: 'Pregão Eletrônico', vigencia: '36 meses', publicado: new Date(Date.now() - 1000*60*60*72).toISOString() },
-    { id: 'p4', orgao: 'SERPRO',       numero: '0234/2026', objeto: 'Outsourcing de profissionais DevOps + SRE', fornecedor: 'CI&T', cnpj_fornecedor: '00609634000150', valor: 9_800_000, modalidade: 'Inexigibilidade', vigencia: '12 meses', publicado: new Date(Date.now() - 1000*60*60*120).toISOString() },
-    { id: 'p5', orgao: 'BACEN',        numero: '0345/2026', objeto: 'Alocação de profissionais Java/Spring Boot', fornecedor: 'TIVIT', cnpj_fornecedor: '00742594000196', valor: 12_500_000, modalidade: 'Pregão Eletrônico', vigencia: '12 meses', publicado: new Date(Date.now() - 1000*60*60*168).toISOString() },
-  ];
-
-  const NOTIFICATIONS = [
-    { id: 'n1', kind: 'pncp_match', titulo: '3 novos contratos de bodyshop hoje', mensagem: 'TIVIT, Stefanini e CI&T', lida: false, when: new Date(Date.now() - 1000*60*8).toISOString() },
-    { id: 'n2', kind: 'sla_risk',  titulo: 'SLA em risco — SERPRO', mensagem: 'Deal sem movimento há 5 dias', lida: false, when: new Date(Date.now() - 1000*60*60).toISOString() },
-  ];
-
-  window.DATA = { fmt, ROLES, CURRENT_USER, USERS, STAGES, COMPANIES, COMPANY_LIST, DEALS, ACTIVITIES, PNCP_CONTRACTS, NOTIFICATIONS };
+  window.DATA = MOCK;
+  window.API = { auth, api, login, refresh, loadAll };
 })();

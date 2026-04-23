@@ -92,9 +92,9 @@ class EtlRunRequest(BaseModel):
     keywords: list[str] = []
     ufs: list[str] = []
     status: str = "vigente"
-    max_paginas: int | None = None
-    max_workers: int = 8
-    detalhe_limit: int | None = 2000
+    max_paginas: int | None = 100
+    max_workers: int = 10
+    detalhe_limit: int | None = 10_000
     classify_with_ai: bool = True
     enrich_contacts: bool = False
 

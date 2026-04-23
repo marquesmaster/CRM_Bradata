@@ -3,19 +3,26 @@ function Dashboard() {
 }
 
 function DashboardExecutive() {
-  const { fmt, DEALS, STAGES, COMPANIES, PNCP_CONTRACTS } = window.DATA;
-  const pipelineTotal = DEALS.filter(d=>d.stage!=='ganho').reduce((s,d)=>s+d.value,0);
-  const won = DEALS.filter(d=>d.stage==='ganho').reduce((s,d)=>s+d.value,0);
-  const stageSums = STAGES.map(s => ({ ...s, v: DEALS.filter(d=>d.stage===s.id).reduce((a,b)=>a+b.value,0), n: DEALS.filter(d=>d.stage===s.id).length }));
+  const { fmt, DEALS, STAGES, COMPANIES, PNCP_CONTRACTS, CURRENT_USER } = window.DATA;
+  const stageById = Object.fromEntries(STAGES.map(s => [s.id, s]));
+  const isGanho = (d) => stageById[d.stage]?.is_ganho;
+  const pipelineTotal = DEALS.filter(d=>!isGanho(d)).reduce((s,d)=>s+(d.value||0),0);
+  const won = DEALS.filter(isGanho).reduce((s,d)=>s+(d.value||0),0);
+  const stageSums = STAGES.map(s => ({
+    ...s,
+    v: DEALS.filter(d=>d.stage===s.id).reduce((a,b)=>a+(b.value||0),0),
+    n: DEALS.filter(d=>d.stage===s.id).length,
+  }));
   const hotLeads = Object.values(COMPANIES).filter(c=>c.score>=80).sort((a,b)=>b.score-a.score).slice(0,5);
-  const recentPncp = PNCP_CONTRACTS.slice().sort((a,b)=>new Date(b.publicado)-new Date(a.publicado)).slice(0,4);
+  const recentPncp = PNCP_CONTRACTS.slice().sort((a,b)=>new Date(b.publicado||0)-new Date(a.publicado||0)).slice(0,4);
+  const firstName = (CURRENT_USER?.name || '').split(' ')[0] || 'time';
 
   return (
     <>
       <div className="page-head">
         <div>
-          <h1 className="page-title">Bom dia, Rafael 👋</h1>
-          <div className="page-sub">Você tem <strong>7 atividades pendentes</strong> e <strong style={{color:'hsl(var(--b-accent))'}}>3 novos leads</strong> detectados no PNCP hoje.</div>
+          <h1 className="page-title">Olá, {firstName} 👋</h1>
+          <div className="page-sub">{DEALS.length} oportunidades no pipeline · <strong style={{color:'hsl(var(--b-accent))'}}>{PNCP_CONTRACTS.length} contratos recentes</strong> no PNCP.</div>
         </div>
         <div className="actions">
           <button className="btn btn-ghost"><I.download size={14}/>Exportar</button>

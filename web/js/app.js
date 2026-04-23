@@ -1,28 +1,90 @@
+// Main App shell — bootstraps: auth gate, carrega DATA via API, rende shell.
 const NAV = [
   { id:'dashboard', label:'Dashboard', ico:'dashboard' },
   { id:'pncp', label:'Descoberta PNCP', ico:'radar', badge:'novo' },
   { id:'accounts', label:'Contas', ico:'building' },
   { id:'pipeline', label:'Pipeline', ico:'kanban' },
-  { id:'activities', label:'Atividades', ico:'check', count:7 },
+  { id:'activities', label:'Atividades', ico:'check' },
   { id:'reports', label:'Relatórios', ico:'chart' },
   { id:'users', label:'Usuários', ico:'users', section:'admin' },
   { id:'settings', label:'Configurações', ico:'settings', section:'admin' },
 ];
 
-function App() {
+function Boot() {
+  const [authed, setAuthed] = React.useState(() => window.API.auth.isAuthed());
+  const [loading, setLoading] = React.useState(authed);
+  const [error, setError] = React.useState(null);
+  const [ready, setReady] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!authed) {
+      setLoading(false);
+      setReady(true);
+      return;
+    }
+    setLoading(true);
+    window.API.refresh()
+      .then(() => { setReady(true); setLoading(false); })
+      .catch(err => { setError(err.message); setLoading(false); setReady(true); });
+  }, [authed]);
+
+  if (!authed) {
+    return <LoginScreen onLoggedIn={() => { setAuthed(true); }}/>;
+  }
+
+  if (loading || !ready) {
+    return (
+      <div style={{minHeight:'100vh', display:'grid', placeItems:'center', background:'hsl(var(--bg))'}}>
+        <div style={{textAlign:'center'}}>
+          <div style={{width:40, height:40, borderRadius:'50%', border:'3px solid hsl(var(--border))', borderTopColor:'hsl(var(--b-accent))', animation:'spin 0.8s linear infinite', margin:'0 auto 12px'}}/>
+          <div style={{fontSize:13, color:'hsl(var(--fg-muted))'}}>Carregando CRM…</div>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{minHeight:'100vh', display:'grid', placeItems:'center', background:'hsl(var(--bg))', padding:20}}>
+        <div style={{maxWidth:480, textAlign:'center'}}>
+          <h2 style={{fontSize:18, marginBottom:8}}>Não foi possível carregar os dados</h2>
+          <p style={{color:'hsl(var(--fg-muted))', fontSize:13, marginBottom:20}}>{error}</p>
+          <button className="btn btn-ghost" onClick={() => location.reload()}>Tentar novamente</button>
+          <button className="btn btn-ghost" style={{marginLeft:8}} onClick={() => { window.API.auth.clear(); location.reload(); }}>Sair</button>
+        </div>
+      </div>
+    );
+  }
+
+  return <App onLogout={() => { window.API.auth.clear(); setAuthed(false); }}/>;
+}
+
+function App({ onLogout }) {
   const [route, setRoute] = React.useState(() => localStorage.getItem('bradata-route') || 'dashboard');
   const [selectedLead, setSelectedLead] = React.useState(null);
   const [theme, setTheme] = React.useState(() => localStorage.getItem('bradata-theme') || 'light');
   const [collapsed, setCollapsed] = React.useState(false);
   const [aiOpen, setAiOpen] = React.useState(false);
+  const [, forceUpdate] = React.useReducer(x => x + 1, 0);
 
   React.useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
   React.useEffect(() => { localStorage.setItem('bradata-route', route); }, [route]);
   React.useEffect(() => { localStorage.setItem('bradata-theme', theme); }, [theme]);
 
+  // Permite que refresh reflita em tela
+  React.useEffect(() => {
+    window.__onDataRefresh = () => forceUpdate();
+    return () => { window.__onDataRefresh = null; };
+  }, []);
+
   window.__nav = (r, leadId) => {
     setRoute(r);
     if (leadId) setSelectedLead(leadId);
+  };
+
+  const reload = () => {
+    window.API.refresh().catch(err => console.error(err));
   };
 
   const renderScreen = () => {
@@ -41,6 +103,7 @@ function App() {
 
   const current = NAV.find(n=>n.id===route);
   const CURRENT_USER = window.DATA.CURRENT_USER;
+  const role = window.DATA.ROLES[CURRENT_USER.role] || {};
 
   return (
     <div className="app-shell" data-collapsed={collapsed ? "true" : "false"}>
@@ -61,11 +124,10 @@ function App() {
           {NAV.filter(n=>!n.section).map(n => (
             <button key={n.id} className={`nav-item ${route===n.id?'active':''}`} onClick={()=>setRoute(n.id)}
               style={{display:'flex', alignItems:'center', gap:11, padding:'9px 10px', borderRadius:8, color: route===n.id?'white':'hsl(var(--sidebar-fg) / .78)', background: route===n.id?'hsl(0 0% 100% / .08)':'transparent', fontSize:13.5, fontWeight:500, width:'100%', textAlign:'left', position:'relative'}}>
-              {React.createElement(I[n.ico], { size: 16 })}
+              {React.createElement(I[n.ico] || I.dashboard, { size: 16 })}
               {!collapsed && <>
                 <span style={{flex:1}}>{n.label}</span>
                 {n.badge && <span className="chip primary" style={{fontSize:9, padding:'1px 6px'}}>{n.badge}</span>}
-                {n.count != null && <span style={{fontSize:10.5, fontWeight:600, padding:'2px 7px', borderRadius:999, background:'hsl(0 0% 100% / .09)'}}>{n.count}</span>}
               </>}
             </button>
           ))}
@@ -73,7 +135,7 @@ function App() {
           {NAV.filter(n=>n.section==='admin').map(n => (
             <button key={n.id} className={`nav-item ${route===n.id?'active':''}`} onClick={()=>setRoute(n.id)}
               style={{display:'flex', alignItems:'center', gap:11, padding:'9px 10px', borderRadius:8, color: route===n.id?'white':'hsl(var(--sidebar-fg) / .78)', background: route===n.id?'hsl(0 0% 100% / .08)':'transparent', fontSize:13.5, fontWeight:500, width:'100%', textAlign:'left'}}>
-              {React.createElement(I[n.ico], { size: 16 })}
+              {React.createElement(I[n.ico] || I.settings, { size: 16 })}
               {!collapsed && <span>{n.label}</span>}
             </button>
           ))}
@@ -83,9 +145,9 @@ function App() {
           {!collapsed && <>
             <div style={{flex:1, minWidth:0}}>
               <div style={{fontSize:12.5, fontWeight:600}}>{CURRENT_USER.name}</div>
-              <div style={{fontSize:10.5, color:'hsl(var(--sidebar-muted))'}}>Master · Bradata</div>
+              <div style={{fontSize:10.5, color:'hsl(var(--sidebar-muted))'}}>{role.label || CURRENT_USER.role} · {CURRENT_USER.team || 'Bradata'}</div>
             </div>
-            <button className="icon-btn" style={{color:'hsl(var(--sidebar-fg) / .6)'}} onClick={(e)=>{e.stopPropagation(); setTheme(theme==='light'?'dark':'light');}}>
+            <button className="icon-btn" style={{color:'hsl(var(--sidebar-fg) / .6)'}} onClick={(e)=>{e.stopPropagation(); setTheme(theme==='light'?'dark':'light');}} title="Alternar tema">
               {theme==='light' ? <I.moon size={14}/> : <I.sun size={14}/>}
             </button>
           </>}
@@ -107,7 +169,10 @@ function App() {
               <I.bell size={15}/>
               <span style={{position:'absolute', top:6, right:6, width:7, height:7, borderRadius:'50%', background:'hsl(var(--danger))'}}/>
             </button>
-            <button className="icon-btn"><I.refresh size={15}/></button>
+            <button className="icon-btn" title="Recarregar dados" onClick={reload}><I.refresh size={15}/></button>
+            <button className="icon-btn" title="Sair" onClick={onLogout} style={{color:'hsl(var(--danger))'}}>
+              <I.close size={15}/>
+            </button>
           </div>
         </header>
         <main className="main-content">
@@ -119,4 +184,4 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+ReactDOM.createRoot(document.getElementById('root')).render(<Boot/>);
