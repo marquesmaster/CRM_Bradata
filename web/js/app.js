@@ -1,13 +1,20 @@
-// Main App shell — bootstraps: auth gate, carrega DATA via API, rende shell.
+// Main App shell — bootstrap auth + roteamento + shell
 const NAV = [
-  { id:'dashboard', label:'Dashboard', ico:'dashboard' },
-  { id:'pncp', label:'Descoberta PNCP', ico:'radar', badge:'novo' },
-  { id:'accounts', label:'Contas', ico:'building' },
-  { id:'pipeline', label:'Pipeline', ico:'kanban' },
-  { id:'activities', label:'Atividades', ico:'check' },
-  { id:'reports', label:'Relatórios', ico:'chart' },
-  { id:'users', label:'Usuários', ico:'users', section:'admin' },
-  { id:'settings', label:'Configurações', ico:'settings', section:'admin' },
+  { id:'dashboard',   label:'Dashboard',    ico:'dashboard' },
+  { id:'execucoes',   label:'Execuções',    ico:'refresh',  badge:'ao vivo' },
+  { id:'pncp',        label:'Descoberta PNCP', ico:'radar', badge:'novo' },
+  { id:'contratos',   label:'Contratos',    ico:'doc' },
+  { id:'accounts',    label:'Contas',       ico:'building' },
+  { id:'prospeccao',  label:'Prospecção',   ico:'target' },
+  { id:'deals',       label:'Deals',        ico:'money' },
+  { id:'pipeline',    label:'Pipeline',     ico:'kanban' },
+  { id:'propostas',   label:'Propostas',    ico:'doc' },
+  { id:'activities',  label:'Atividades',   ico:'check' },
+  { id:'agenda',      label:'Agenda',       ico:'calendar' },
+  { id:'reports',     label:'Relatórios',   ico:'chart' },
+  { id:'automacoes',  label:'Automações',   ico:'zap',      section:'admin' },
+  { id:'users',       label:'Usuários',     ico:'users',    section:'admin' },
+  { id:'settings',    label:'Configurações',ico:'settings', section:'admin' },
 ];
 
 function Boot() {
@@ -17,20 +24,14 @@ function Boot() {
   const [ready, setReady] = React.useState(false);
 
   React.useEffect(() => {
-    if (!authed) {
-      setLoading(false);
-      setReady(true);
-      return;
-    }
+    if (!authed) { setLoading(false); setReady(true); return; }
     setLoading(true);
     window.API.refresh()
       .then(() => { setReady(true); setLoading(false); })
       .catch(err => { setError(err.message); setLoading(false); setReady(true); });
   }, [authed]);
 
-  if (!authed) {
-    return <LoginScreen onLoggedIn={() => { setAuthed(true); }}/>;
-  }
+  if (!authed) return <LoginScreen onLoggedIn={() => setAuthed(true)}/>;
 
   if (loading || !ready) {
     return (
@@ -62,7 +63,7 @@ function Boot() {
 
 function App({ onLogout }) {
   const [route, setRoute] = React.useState(() => localStorage.getItem('bradata-route') || 'dashboard');
-  const [selectedLead, setSelectedLead] = React.useState(null);
+  const [params, setParams] = React.useState({});
   const [theme, setTheme] = React.useState(() => localStorage.getItem('bradata-theme') || 'light');
   const [collapsed, setCollapsed] = React.useState(false);
   const [aiOpen, setAiOpen] = React.useState(false);
@@ -72,38 +73,70 @@ function App({ onLogout }) {
   React.useEffect(() => { localStorage.setItem('bradata-route', route); }, [route]);
   React.useEffect(() => { localStorage.setItem('bradata-theme', theme); }, [theme]);
 
-  // Permite que refresh reflita em tela
   React.useEffect(() => {
     window.__onDataRefresh = () => forceUpdate();
     return () => { window.__onDataRefresh = null; };
   }, []);
 
-  window.__nav = (r, leadId) => {
+  // Roteador simples: window.__nav(route, arg) ou window.__nav(route, {param: value})
+  window.__nav = (r, arg) => {
     setRoute(r);
-    if (leadId) setSelectedLead(leadId);
+    if (arg == null) { setParams({}); }
+    else if (typeof arg === 'object') { setParams(arg); }
+    else {
+      const paramName =
+        r === 'lead'           ? 'companyId'
+      : r === 'contrato'       ? 'contratoId'
+      : r === 'prospeccaoDetail' ? 'leadId'
+      : r === 'proposta'       ? 'propostaId'
+      : r === 'historico'      ? 'cnpjOrId'
+      : r === 'propostas'      ? 'dealId'
+      : 'id';
+      setParams({ [paramName]: arg });
+    }
   };
 
-  const reload = () => {
-    window.API.refresh().catch(err => console.error(err));
-  };
+  const reload = () => { window.API.refresh().catch(err => console.error(err)); };
 
   const renderScreen = () => {
-    if (route === 'lead') return <LeadDetail companyId={selectedLead} onBack={()=>setRoute('accounts')}/>;
-    if (route === 'dashboard') return <Dashboard/>;
-    if (route === 'pncp') return <PNCP/>;
-    if (route === 'accounts') return <Accounts/>;
-    if (route === 'pipeline') return <Pipeline/>;
-    if (route === 'activities') return <Activities/>;
-    if (route === 'reports') return <Reports/>;
-    if (route === 'users') return <Users/>;
-    if (route === 'profile') return <Profile/>;
-    if (route === 'settings') return <Settings/>;
-    return <Dashboard/>;
+    switch (route) {
+      case 'dashboard':         return <Dashboard/>;
+      case 'execucoes':         return <Execucoes/>;
+      case 'pncp':              return <PNCP/>;
+      case 'contratos':         return <Contratos/>;
+      case 'contrato':          return <ContratoDetail contratoId={params.contratoId} onBack={()=>setRoute('contratos')}/>;
+      case 'accounts':          return <Accounts/>;
+      case 'prospeccao':        return <Prospeccao/>;
+      case 'prospeccaoDetail':  return <ProspeccaoDetail leadId={params.leadId} onBack={()=>setRoute('prospeccao')}/>;
+      case 'deals':             return <Deals/>;
+      case 'pipeline':          return <Pipeline/>;
+      case 'propostas':         return <Propostas dealId={params.dealId}/>;
+      case 'proposta':          return <PropostaDetail propostaId={params.propostaId} onBack={()=>setRoute('propostas')}/>;
+      case 'activities':        return <Activities/>;
+      case 'agenda':            return <Agenda/>;
+      case 'reports':           return <Reports/>;
+      case 'automacoes':        return <Automacoes/>;
+      case 'users':             return <Users/>;
+      case 'profile':           return <Profile/>;
+      case 'settings':          return <Settings/>;
+      case 'lead':              return <LeadDetail companyId={params.companyId} onBack={()=>setRoute('accounts')}/>;
+      case 'historico':         return <Historico cnpjOrId={params.cnpjOrId} onBack={()=>setRoute('accounts')}/>;
+      default:                  return <NotFound onHome={()=>setRoute('dashboard')}/>;
+    }
   };
 
-  const current = NAV.find(n=>n.id===route);
+  const current = NAV.find(n => n.id === route);
   const CURRENT_USER = window.DATA.CURRENT_USER;
   const role = window.DATA.ROLES[CURRENT_USER.role] || {};
+
+  const pageTitle =
+    route === 'lead' ? 'Detalhe da empresa'
+  : route === 'contrato' ? 'Detalhe do contrato'
+  : route === 'prospeccaoDetail' ? 'Detalhe do lead'
+  : route === 'proposta' ? 'Detalhe da proposta'
+  : route === 'historico' ? 'Histórico 360°'
+  : route === 'profile' ? 'Meu perfil'
+  : (current?.label || 'Bradata CRM');
 
   return (
     <div className="app-shell" data-collapsed={collapsed ? "true" : "false"}>
@@ -122,7 +155,7 @@ function App({ onLogout }) {
         </div>
         <nav style={{flex:1, overflowY:'auto', padding:'14px 12px', display:'flex', flexDirection:'column', gap:2}}>
           {NAV.filter(n=>!n.section).map(n => (
-            <button key={n.id} className={`nav-item ${route===n.id?'active':''}`} onClick={()=>setRoute(n.id)}
+            <button key={n.id} className={`nav-item ${route===n.id?'active':''}`} onClick={()=>window.__nav(n.id)}
               style={{display:'flex', alignItems:'center', gap:11, padding:'9px 10px', borderRadius:8, color: route===n.id?'white':'hsl(var(--sidebar-fg) / .78)', background: route===n.id?'hsl(0 0% 100% / .08)':'transparent', fontSize:13.5, fontWeight:500, width:'100%', textAlign:'left', position:'relative'}}>
               {React.createElement(I[n.ico] || I.dashboard, { size: 16 })}
               {!collapsed && <>
@@ -133,14 +166,14 @@ function App({ onLogout }) {
           ))}
           {!collapsed && <div style={{padding:'14px 12px 6px', fontSize:9.5, textTransform:'uppercase', letterSpacing:'.08em', color:'hsl(var(--sidebar-muted))', fontWeight:600}}>Administração</div>}
           {NAV.filter(n=>n.section==='admin').map(n => (
-            <button key={n.id} className={`nav-item ${route===n.id?'active':''}`} onClick={()=>setRoute(n.id)}
+            <button key={n.id} className={`nav-item ${route===n.id?'active':''}`} onClick={()=>window.__nav(n.id)}
               style={{display:'flex', alignItems:'center', gap:11, padding:'9px 10px', borderRadius:8, color: route===n.id?'white':'hsl(var(--sidebar-fg) / .78)', background: route===n.id?'hsl(0 0% 100% / .08)':'transparent', fontSize:13.5, fontWeight:500, width:'100%', textAlign:'left'}}>
               {React.createElement(I[n.ico] || I.settings, { size: 16 })}
               {!collapsed && <span>{n.label}</span>}
             </button>
           ))}
         </nav>
-        <div style={{padding:12, borderTop:'1px solid hsl(0 0% 100% / .06)', display:'flex', alignItems:'center', gap:10, color:'hsl(var(--sidebar-fg))', cursor:'pointer'}} onClick={()=>setRoute('profile')}>
+        <div style={{padding:12, borderTop:'1px solid hsl(0 0% 100% / .06)', display:'flex', alignItems:'center', gap:10, color:'hsl(var(--sidebar-fg))', cursor:'pointer'}} onClick={()=>window.__nav('profile')}>
           <UI.Avatar name={CURRENT_USER.name} size={32}/>
           {!collapsed && <>
             <div style={{flex:1, minWidth:0}}>
@@ -158,7 +191,7 @@ function App({ onLogout }) {
           <div className="row" style={{gap:10}}>
             <span className="muted" style={{fontSize:12}}>Bradata CRM</span>
             <I.chevron size={10} className="faint"/>
-            <strong style={{fontSize:13}}>{route==='lead' ? 'Detalhe do lead' : route==='profile' ? 'Meu perfil' : current?.label}</strong>
+            <strong style={{fontSize:13}}>{pageTitle}</strong>
           </div>
           <div className="row" style={{gap:4}}>
             <button className="btn btn-sm" onClick={()=>setAiOpen(!aiOpen)} style={{background:'linear-gradient(135deg, hsl(var(--b-accent) / .10), hsl(var(--b-accent-light) / .12))', color:'hsl(var(--b-accent))', border:'1px solid hsl(var(--b-accent) / .28)', fontWeight:600, gap:6}}>
