@@ -34,6 +34,14 @@ function Execucoes() {
         </div>
         <div className="actions">
           <button className="btn btn-ghost btn-sm" onClick={load}><I.refresh size={12}/>Atualizar</button>
+          <button className="btn btn-ghost btn-sm" onClick={async () => {
+            if (!confirm('Classificar com IA todos os contratos ainda não classificados? (lotes de 30)')) return;
+            try {
+              const r = await window.API.api('/pncp/classificar-batch?batch_size=30', { method: 'POST' });
+              alert(r.message);
+              load();
+            } catch (e) { alert(e.message); }
+          }}><I.sparkle size={12}/>Classificar IA em batch</button>
           <button className="btn btn-accent btn-sm" onClick={()=>setShowModal(true)}><I.plus size={12}/>Nova execução</button>
         </div>
       </div>
