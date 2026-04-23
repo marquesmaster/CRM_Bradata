@@ -5,6 +5,7 @@ from app.models.atividade import (
     TipoAtividade,
 )
 from app.models.automacao import Automacao, AutomacaoKind
+from app.models.chat import ChatChannel, ChatChannelKind, ChatMembership, ChatMessage
 from app.models.contato import Contato
 from app.models.empresa import Empresa, EmpresaStatus, OrigemEmpresa
 from app.models.etl_run import EtlRun, EtlRunStatus
@@ -33,6 +34,10 @@ __all__ = [
     "AtividadeStatus",
     "Automacao",
     "AutomacaoKind",
+    "ChatChannel",
+    "ChatChannelKind",
+    "ChatMembership",
+    "ChatMessage",
     "Contato",
     "Empresa",
     "EmpresaStatus",

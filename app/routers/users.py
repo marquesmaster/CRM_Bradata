@@ -78,6 +78,21 @@ def me(current: CurrentUser):
     return current
 
 
+@router.get("/team")
+def list_team(db: DBSession, _: CurrentUser):
+    """Lista pública dos users ativos (id, nome, email) — usada por chat interno."""
+    rows = (
+        db.query(User.id, User.nome, User.email, User.role, User.team)
+        .filter(User.is_active.is_(True))
+        .order_by(User.nome)
+        .all()
+    )
+    return [
+        {"id": r.id, "nome": r.nome, "email": r.email, "role": r.role.value, "team": r.team}
+        for r in rows
+    ]
+
+
 @router.get("/me/stats", response_model=UserStats)
 def me_stats(db: DBSession, current: CurrentUser):
     return _user_stats(db, current.id)

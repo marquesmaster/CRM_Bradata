@@ -12,6 +12,7 @@ const NAV = [
   { id:'activities',  label:'Atividades',   ico:'check' },
   { id:'agenda',      label:'Agenda',       ico:'calendar' },
   { id:'reports',     label:'Relatórios',   ico:'chart' },
+  { id:'chat',        label:'Chat interno', ico:'chat' },
   { id:'automacoes',  label:'Automações',   ico:'zap',      section:'admin' },
   { id:'users',       label:'Usuários',     ico:'users',    section:'admin' },
   { id:'settings',    label:'Configurações',ico:'settings', section:'admin' },
@@ -78,6 +79,17 @@ function App({ onLogout }) {
     return () => { window.__onDataRefresh = null; };
   }, []);
 
+  // Polling leve de unread do chat (10s) — alimenta badge no nav
+  const [chatUnread, setChatUnread] = React.useState(0);
+  React.useEffect(() => {
+    const refresh = () => window.API.api('/chat/channels')
+      .then(chs => setChatUnread((chs || []).reduce((s,c) => s + (c.unread || 0), 0)))
+      .catch(() => {});
+    refresh();
+    const t = setInterval(refresh, 10000);
+    return () => clearInterval(t);
+  }, [route]);
+
   // Roteador simples: window.__nav(route, arg) ou window.__nav(route, {param: value})
   window.__nav = (r, arg) => {
     setRoute(r);
@@ -115,6 +127,7 @@ function App({ onLogout }) {
       case 'activities':        return <Activities/>;
       case 'agenda':            return <Agenda/>;
       case 'reports':           return <Reports/>;
+      case 'chat':              return <Chat/>;
       case 'automacoes':        return <Automacoes/>;
       case 'users':             return <Users/>;
       case 'profile':           return <Profile/>;
@@ -160,7 +173,10 @@ function App({ onLogout }) {
               {React.createElement(I[n.ico] || I.dashboard, { size: 16 })}
               {!collapsed && <>
                 <span style={{flex:1}}>{n.label}</span>
-                {n.badge && <span className="chip primary" style={{fontSize:9, padding:'1px 6px'}}>{n.badge}</span>}
+                {n.id === 'chat' && chatUnread > 0 && (
+                  <span className="chip" style={{background:'hsl(var(--b-accent))', color:'white', fontSize:9.5, padding:'2px 7px', minWidth:18, justifyContent:'center'}}>{chatUnread}</span>
+                )}
+                {n.badge && n.id !== 'chat' && <span className="chip primary" style={{fontSize:9, padding:'1px 6px'}}>{n.badge}</span>}
               </>}
             </button>
           ))}
