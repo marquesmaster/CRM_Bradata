@@ -11,6 +11,7 @@ from app.models.contato import Contato
 from app.models.empresa import Empresa
 from app.schemas.common import Page
 from app.schemas.contato import ContatoCreate, ContatoOut, ContatoUpdate
+from app.services import google_oauth as gauth
 from app.services.smtp import SMTPError, enviar_email, render_template
 
 router = APIRouter()
@@ -161,16 +162,24 @@ def enviar_email_contato(
     vars_ = _build_render_vars(c, empresa, current, payload.vars_extra)
     assunto_r, corpo_r = render_template(assunto or "(sem assunto)", corpo, vars_)
 
+    # Prioridade: Gmail do user (envio como ele, replies vão pra inbox dele) >
+    # SMTP global (noreply@bradata)
     try:
-        result = enviar_email(
-            c.email,
-            assunto_r,
-            corpo_r,
-            cc=payload.cc,
-            bcc=payload.bcc,
-            html=payload.html,
-            reply_to=payload.reply_to,
-        )
+        if current.google_refresh_token:
+            result = gauth.send_via_gmail(
+                db, current,
+                c.email, assunto_r, corpo_r,
+                cc=payload.cc, bcc=payload.bcc,
+                html=payload.html, reply_to=payload.reply_to,
+            )
+        else:
+            result = enviar_email(
+                c.email, assunto_r, corpo_r,
+                cc=payload.cc, bcc=payload.bcc,
+                html=payload.html, reply_to=payload.reply_to,
+            )
+    except gauth.GoogleOAuthError as e:
+        raise HTTPException(status_code=502, detail=f"Gmail: {e}")
     except SMTPError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
@@ -183,7 +192,7 @@ def enviar_email_contato(
         empresa_id=c.empresa_id,
         contato_id=c.id,
         user_id=current.id,
-        resultado=f"enviado para {c.email}",
+        resultado=f"enviado via {result.get('via','smtp')} para {c.email}",
     )
     db.add(atv)
 
