@@ -1,4 +1,4 @@
-"""etl_runs + automacoes + propostas
+"""etl_runs + automacoes + propostas (idempotente contra tipos pré-existentes)
 
 Revision ID: 0004_etl_runs_automacoes
 Revises: 0003_pncp_ai_fields
@@ -14,14 +14,32 @@ branch_labels = None
 depends_on = None
 
 
+def _enum_exists(bind, name: str) -> bool:
+    return bool(
+        bind.execute(
+            sa.text("SELECT 1 FROM pg_type WHERE typname = :n"), {"n": name}
+        ).scalar()
+    )
+
+
+def _ensure_enum(bind, name: str, values: list[str]) -> None:
+    """Cria o ENUM só se ainda não existir (Postgres-safe)."""
+    if not _enum_exists(bind, name):
+        sa.Enum(*values, name=name).create(bind, checkfirst=True)
+
+
 def upgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     existing = set(inspector.get_table_names())
 
+    # ---------------- ETL_RUNS ----------------
     if "etl_runs" not in existing:
-        etl_status = sa.Enum("running", "done", "error", "canceled", name="etl_run_status")
-        etl_status.create(bind, checkfirst=True)
+        _ensure_enum(bind, "etl_run_status", ["running", "done", "error", "canceled"])
+        etl_status = postgresql.ENUM(
+            "running", "done", "error", "canceled",
+            name="etl_run_status", create_type=False,
+        )
         op.create_table(
             "etl_runs",
             sa.Column("id", sa.Integer(), primary_key=True),
@@ -48,13 +66,14 @@ def upgrade() -> None:
         op.create_index("ix_etl_runs_iniciado_em", "etl_runs", ["iniciado_em"])
         op.create_index("ix_etl_runs_triggered_by_id", "etl_runs", ["triggered_by_id"])
 
+    # ---------------- AUTOMACOES ----------------
     if "automacoes" not in existing:
-        auto_kind = sa.Enum(
+        auto_values = [
             "template_email", "template_whatsapp", "alerta_inatividade",
             "alerta_sla", "cadencia_followup", "regra_score_empresa",
-            name="automacao_kind",
-        )
-        auto_kind.create(bind, checkfirst=True)
+        ]
+        _ensure_enum(bind, "automacao_kind", auto_values)
+        auto_kind = postgresql.ENUM(*auto_values, name="automacao_kind", create_type=False)
         op.create_table(
             "automacoes",
             sa.Column("id", sa.Integer(), primary_key=True),
@@ -73,12 +92,11 @@ def upgrade() -> None:
         op.create_index("ix_automacoes_kind", "automacoes", ["kind"])
         op.create_index("ix_automacoes_ativo", "automacoes", ["ativo"])
 
+    # ---------------- PROPOSTAS ----------------
     if "propostas" not in existing:
-        prop_status = sa.Enum(
-            "rascunho", "enviada", "em_analise", "aceita", "rejeitada", "expirada",
-            name="proposta_status",
-        )
-        prop_status.create(bind, checkfirst=True)
+        prop_values = ["rascunho", "enviada", "em_analise", "aceita", "rejeitada", "expirada"]
+        _ensure_enum(bind, "proposta_status", prop_values)
+        prop_status = postgresql.ENUM(*prop_values, name="proposta_status", create_type=False)
         op.create_table(
             "propostas",
             sa.Column("id", sa.Integer(), primary_key=True),
