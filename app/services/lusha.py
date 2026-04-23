@@ -84,12 +84,16 @@ def _search_contacts_by_domain(domain: str, titles: list[str], limit: int) -> li
         raise LushaError("Lusha: sem créditos na conta")
     if r.status_code == 401:
         raise LushaError("Lusha: API key inválida")
+    if r.status_code == 404:
+        return []  # sem resultados pra esse domínio
     if r.status_code >= 400:
         raise LushaError(f"Lusha {r.status_code}: {r.text[:200]}")
 
     data = r.json()
     # Formato esperado: {"data": [{...}, ...]} ou {"contacts": [...]}
-    return data.get("data") or data.get("contacts") or []
+    results = data.get("data") or data.get("contacts") or []
+    log.info("Lusha search domain=%s titles=%s -> %d resultados", domain, len(titles), len(results))
+    return results
 
 
 @retry(

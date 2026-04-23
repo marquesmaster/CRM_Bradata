@@ -243,6 +243,55 @@ def enriquecer_lusha(empresa_id: int, db: DBSession, _: CurrentUser):
     return resumo
 
 
+@router.get("/{empresa_id}/diag")
+def diagnostico_empresa(empresa_id: int, db: DBSession, _: CurrentUser):
+    """Diagnóstico das integrações para uma empresa: o que CNPJ.WS e Lusha veem."""
+    from app.core.config import settings as _settings
+    from app.services.cnpj_ws import _fetch as cnpj_fetch, CnpjWsError
+    from app.services.lusha import _domain_of
+
+    empresa = db.get(Empresa, empresa_id)
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+
+    diag = {
+        "empresa": {
+            "id": empresa.id, "cnpj": empresa.cnpj,
+            "razao_social": empresa.razao_social,
+            "website": empresa.website, "email": empresa.email,
+            "enriquecida_em": empresa.enriquecida_em,
+        },
+        "cnpj_ws": {
+            "endpoint_em_uso": "comercial.cnpj.ws (token)" if _settings.cnpj_ws_token else "publica.cnpj.ws (sem token)",
+            "delay_ms": 200 if _settings.cnpj_ws_token else _settings.cnpj_ws_request_delay_ms,
+        },
+        "lusha": {
+            "configurada": bool(_settings.lusha_api_key),
+            "dominio_derivado": _domain_of(empresa),
+            "max_contatos": _settings.lusha_max_contatos_por_empresa,
+            "cargos": _settings.lusha_cargos_prioridade_list[:5],
+        },
+    }
+    # Ping rápido CNPJ.WS sem aplicar mudanças
+    try:
+        raw = cnpj_fetch(empresa.cnpj) if empresa.cnpj else None
+        diag["cnpj_ws"]["status"] = "ok" if raw else "404 (CNPJ não encontrado)"
+        if raw:
+            estab = raw.get("estabelecimento") or {}
+            diag["cnpj_ws"]["sample"] = {
+                "razao_social": raw.get("razao_social"),
+                "nome_fantasia": estab.get("nome_fantasia"),
+                "email": estab.get("email"),
+                "porte": (raw.get("porte") or {}).get("descricao"),
+            }
+    except CnpjWsError as e:
+        diag["cnpj_ws"]["status"] = f"erro: {e}"
+    except Exception as e:
+        diag["cnpj_ws"]["status"] = f"falha inesperada: {e}"
+
+    return diag
+
+
 @router.get("/{empresa_id}/contatos")
 def listar_contatos_empresa(empresa_id: int, db: DBSession, _: CurrentUser):
     from app.models.contato import Contato  # local para evitar circular

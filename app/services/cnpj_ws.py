@@ -89,6 +89,18 @@ def enrich_empresa_from_cnpjws(empresa: Empresa) -> bool:
         empresa.telefone = f"{ddd1}{tel1}".strip() or empresa.telefone
     empresa.email = estab.get("email") or empresa.email
 
+    # CNPJ.WS não retorna website. Se temos um email corporativo (não gmail/hotmail/etc),
+    # derivamos o domínio dele pra usar como website (Lusha precisa disso).
+    if not empresa.website and empresa.email and "@" in empresa.email:
+        domain = empresa.email.split("@", 1)[1].strip().lower()
+        if domain and domain not in {
+            "gmail.com", "hotmail.com", "outlook.com", "yahoo.com", "yahoo.com.br",
+            "uol.com.br", "bol.com.br", "terra.com.br", "ig.com.br", "live.com",
+            "icloud.com", "msn.com", "globo.com", "r7.com",
+        }:
+            empresa.website = domain
+            log.info("Empresa %s: website derivado do email -> %s", empresa.cnpj, domain)
+
     atividade_principal = estab.get("atividade_principal") or {}
     empresa.cnae_principal = atividade_principal.get("subclasse") or empresa.cnae_principal
     empresa.cnae_principal_descricao = atividade_principal.get("descricao") or empresa.cnae_principal_descricao
