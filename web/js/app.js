@@ -4,7 +4,7 @@ const NAV = [
   { id:'execucoes',   label:'Execuções',    ico:'refresh',  badge:'ao vivo' },
   { id:'pncp',        label:'Descoberta PNCP', ico:'radar', badge:'novo' },
   { id:'contratos',   label:'Contratos',    ico:'doc' },
-  { id:'accounts',    label:'Contas',       ico:'building' },
+  { id:'accounts',    label:'Fornecedores', ico:'building' },
   { id:'prospeccao',  label:'Prospecção',   ico:'target' },
   { id:'deals',       label:'Deals',        ico:'money' },
   { id:'pipeline',    label:'Pipeline',     ico:'kanban' },
