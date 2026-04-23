@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
 
 import httpx
@@ -15,6 +14,7 @@ from tenacity import (
 )
 
 from app.core.config import settings
+from app.services.pncp.concurrency import throttle
 
 log = logging.getLogger("pncp.client")
 
@@ -34,10 +34,13 @@ class PncpClient:
     def __init__(self, base_url: str | None = None, timeout: int | None = None) -> None:
         self._base_url = base_url or settings.pncp_base_url
         self._timeout = timeout or settings.pncp_request_timeout
+        # Pool com keep-alive — reaproveita conexões TCP/TLS entre requests.
         self._client = httpx.Client(
             base_url=self._base_url,
             headers=DEFAULT_HEADERS,
             timeout=self._timeout,
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=40),
+            http2=False,
         )
 
     def close(self) -> None:
@@ -63,19 +66,16 @@ class PncpClient:
         return r
 
     def get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        # Rate limit GLOBAL (compartilhado entre threads), não por-cliente.
+        throttle()
         r = self._get(path, params=params)
         if r.status_code == 404:
             return None
         if r.status_code >= 400:
             raise PncpError(f"PNCP {r.status_code} em {path}: {r.text[:200]}")
-        self._respect_rate_limit()
         if not r.text:
             return None
         try:
             return r.json()
         except ValueError as e:
             raise PncpError(f"Resposta não-JSON em {path}: {e}")
-
-    @staticmethod
-    def _respect_rate_limit() -> None:
-        time.sleep(settings.pncp_request_delay_ms / 1000.0)

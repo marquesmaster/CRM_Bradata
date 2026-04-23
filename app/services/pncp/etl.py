@@ -1,11 +1,17 @@
-"""Orquestração do ETL completo PNCP.
+"""Orquestração do ETL completo PNCP com paralelismo.
 
-Fluxo:
-  1. search   → pncp_contratos
-  2. detalhe  → extrai numeroControlePncpCompra
-  3. compra   → pncp_compras
-  4. itens    → pncp_compra_itens
-  5. resultados → pncp_resultados (e cria/atualiza Empresas a partir de fornecedores)
+Fluxo por contrato:
+  1. search    → pncp_contratos (paralelo por keyword/UF)
+  2. detalhe   → extrai numeroControlePncpCompra
+  3. (opcional) IA triagem — se NAO, pula etapas caras
+  4. compra    → pncp_compras
+  5. itens     → pncp_compra_itens
+  6. resultados → pncp_resultados + Empresas (fornecedores PJ)
+  7. (opcional) enriquecimento de contatos
+
+Paralelismo: ThreadPoolExecutor com N workers. Cada worker tem sua própria
+Session. Rate limit GLOBAL no httpx client (concurrency.throttle) impede
+sobrecarregar a API do PNCP.
 """
 from __future__ import annotations
 
@@ -15,6 +21,7 @@ from typing import Iterable
 
 from sqlalchemy.orm import Session
 
+from app.core.database import SessionLocal
 from app.models.empresa import Empresa, OrigemEmpresa
 from app.models.pncp import PncpContrato, PncpResultado
 from app.services.ai_classifier import classificar_contrato
@@ -26,6 +33,7 @@ from app.services.pncp.compra import (
     ingest_compra_itens,
     ingest_compra_resultados,
 )
+from app.services.pncp.concurrency import run_parallel
 from app.services.pncp.contrato import ingest_contrato_detalhe
 from app.services.pncp.search import search_pncp_contratos
 
@@ -55,6 +63,83 @@ def _sync_fornecedor_to_empresa(db: Session, resultado: PncpResultado) -> Empres
     return empresa
 
 
+def _process_one_contrato(
+    contrato_id: int,
+    *,
+    classify_with_ai: bool,
+    enrich_contacts: bool,
+) -> dict:
+    """Processa um contrato em sessão própria (pode rodar em thread)."""
+    result = {
+        "detalhe": False,
+        "ai": False,
+        "compra": False,
+        "itens": 0,
+        "resultados": 0,
+        "empresas": 0,
+        "enriquecidas": 0,
+    }
+    with SessionLocal() as db:
+        try:
+            contrato = db.get(PncpContrato, contrato_id)
+            if not contrato:
+                return result
+
+            if not contrato.detalhe_processado:
+                if ingest_contrato_detalhe(db, contrato):
+                    result["detalhe"] = True
+
+            if classify_with_ai and contrato.ai_classificacao is None:
+                try:
+                    res = classificar_contrato(
+                        contrato.titulo or "",
+                        contrato.descricao or "",
+                        contrato.valor_global,
+                    )
+                    if res:
+                        contrato.ai_classificacao = (res.get("classificacao") or "").upper() or None
+                        contrato.ai_confianca = res.get("confianca")
+                        contrato.ai_motivo = res.get("motivo")
+                        contrato.ai_tipo_servico = res.get("tipo_servico")
+                        contrato.ai_oportunidade = res.get("oportunidade_bodyshop")
+                        contrato.ai_processado_em = datetime.now(timezone.utc)
+                        result["ai"] = True
+                except Exception as e:
+                    log.warning("IA falhou %s: %s", contrato.numero_controle_pncp, e)
+
+            # Skip caro se IA disse NÃO/TALVEZ
+            if classify_with_ai and contrato.ai_classificacao not in (None, "SIM"):
+                contrato.itens_processados = True
+                contrato.resultados_processados = True
+                db.commit()
+                return result
+
+            compra = ingest_compra_by_contrato(db, contrato)
+            if compra:
+                result["compra"] = True
+                result["itens"] = ingest_compra_itens(db, compra)
+                result["resultados"] = ingest_compra_resultados(db, compra)
+                for item in compra.itens:
+                    for res in item.resultados:
+                        empresa = _sync_fornecedor_to_empresa(db, res)
+                        if empresa:
+                            result["empresas"] += 1
+                            if enrich_contacts:
+                                try:
+                                    enrich_contatos_empresa(empresa)
+                                    result["enriquecidas"] += 1
+                                except Exception as e:
+                                    log.warning("Enrich falhou %s: %s", empresa.cnpj, e)
+
+            contrato.itens_processados = True
+            contrato.resultados_processados = True
+            db.commit()
+        except Exception as e:
+            log.exception("Falha contrato id=%s: %s", contrato_id, e)
+            db.rollback()
+    return result
+
+
 def run_full_etl(
     db: Session,
     *,
@@ -63,19 +148,15 @@ def run_full_etl(
     ufs: Iterable[str] | None = None,
     status: str | None = None,
     max_paginas: int | None = None,
-    detalhe_limit: int | None = 500,
+    detalhe_limit: int | None = 2000,
     use_prospect_config: bool = True,
     classify_with_ai: bool = True,
     enrich_contacts: bool = False,
+    max_workers: int = 8,
 ) -> dict:
-    """Roda as 4 etapas de extração e retorna um resumo.
-
-    Quando ``use_prospect_config=True`` (padrão), aplica o config_prospect:
-    keywords curadas para o nicho TI-gov, UFs estratégicas, palavras de
-    inclusão/exclusão e modalidades estratégicas.
-    """
+    """Roda o ETL completo em paralelo e retorna um resumo."""
     iniciado = datetime.now(timezone.utc)
-    log.info("ETL PNCP iniciado em %s", iniciado.isoformat())
+    log.info("ETL PNCP iniciado em %s (workers=%s)", iniciado.isoformat(), max_workers)
 
     cfg = config_prospect.load() if use_prospect_config else {}
     tipos_documento = tipos_documento or cfg.get("tipos_documento", "contrato")
@@ -93,87 +174,56 @@ def run_full_etl(
         status=status,
         max_paginas=max_paginas,
         prefilter_cfg=prefilter_cfg,
+        max_workers=max_workers,
     )
 
-    contratos_q = db.query(PncpContrato).filter(PncpContrato.detalhe_processado.is_(False))
+    pendentes_query = db.query(PncpContrato.id).filter(
+        PncpContrato.detalhe_processado.is_(False)
+        | PncpContrato.itens_processados.is_(False)
+    )
     if detalhe_limit:
-        contratos_q = contratos_q.limit(detalhe_limit)
+        pendentes_query = pendentes_query.limit(detalhe_limit)
+    ids = [row[0] for row in pendentes_query.all()]
+    log.info("Processando %s contratos em paralelo", len(ids))
 
-    detalhe_ok = 0
-    compras_ok = 0
-    itens_ok = 0
-    resultados_ok = 0
-    fornecedores_ok = 0
+    totals = {
+        "detalhe": 0,
+        "ai": 0,
+        "compra": 0,
+        "itens": 0,
+        "resultados": 0,
+        "empresas": 0,
+        "enriquecidas": 0,
+    }
 
-    ai_ok = 0
-    enriquecidas = 0
+    def worker(cid: int) -> None:
+        r = _process_one_contrato(
+            cid,
+            classify_with_ai=classify_with_ai,
+            enrich_contacts=enrich_contacts,
+        )
+        for k in totals:
+            totals[k] += int(r.get(k, 0)) if not isinstance(r.get(k), bool) else (1 if r.get(k) else 0)
 
-    for contrato in contratos_q:
-        try:
-            if ingest_contrato_detalhe(db, contrato):
-                detalhe_ok += 1
-
-            if classify_with_ai and contrato.ai_classificacao is None:
-                try:
-                    res = classificar_contrato(
-                        contrato.titulo or "",
-                        contrato.descricao or "",
-                        contrato.valor_global,
-                    )
-                    if res:
-                        contrato.ai_classificacao = (res.get("classificacao") or "").upper() or None
-                        contrato.ai_confianca = res.get("confianca")
-                        contrato.ai_motivo = res.get("motivo")
-                        contrato.ai_tipo_servico = res.get("tipo_servico")
-                        contrato.ai_oportunidade = res.get("oportunidade_bodyshop")
-                        contrato.ai_processado_em = datetime.now(timezone.utc)
-                        ai_ok += 1
-                except Exception as e:
-                    log.warning("IA falhou para %s: %s", contrato.numero_controle_pncp, e)
-
-            # Só vai fundo se a IA disse SIM (ou se IA está desligada)
-            if classify_with_ai and contrato.ai_classificacao not in (None, "SIM"):
-                contrato.itens_processados = True
-                contrato.resultados_processados = True
-                db.commit()
-                continue
-
-            compra = ingest_compra_by_contrato(db, contrato)
-            if not compra:
-                continue
-            compras_ok += 1
-            itens_ok += ingest_compra_itens(db, compra)
-            resultados_ok += ingest_compra_resultados(db, compra)
-            for item in compra.itens:
-                for res in item.resultados:
-                    empresa = _sync_fornecedor_to_empresa(db, res)
-                    if empresa:
-                        fornecedores_ok += 1
-                        if enrich_contacts:
-                            try:
-                                enrich_contatos_empresa(empresa)
-                                enriquecidas += 1
-                            except Exception as e:
-                                log.warning("Contact finder falhou para %s: %s", empresa.cnpj, e)
-            contrato.itens_processados = True
-            contrato.resultados_processados = True
-            db.commit()
-        except Exception as e:
-            log.exception("Falha no contrato %s: %s", contrato.numero_controle_pncp, e)
-            db.rollback()
+    ok, err = run_parallel(worker, ids, max_workers=max_workers)
 
     finalizado = datetime.now(timezone.utc)
     resumo = {
         "iniciado_em": iniciado,
         "finalizado_em": finalizado,
+        "duracao_seg": (finalizado - iniciado).total_seconds(),
         "search": search_res,
-        "contratos_com_detalhe": detalhe_ok,
-        "contratos_classificados_ia": ai_ok,
-        "compras_ingeridas": compras_ok,
-        "itens_ingeridos": itens_ok,
-        "resultados_ingeridos": resultados_ok,
-        "empresas_fornecedoras_criadas_ou_vinculadas": fornecedores_ok,
-        "empresas_enriquecidas_contato": enriquecidas,
+        "contratos_a_processar": len(ids),
+        "contratos_ok": ok,
+        "contratos_com_erro": err,
+        "contratos_com_detalhe": totals["detalhe"],
+        "contratos_classificados_ia": totals["ai"],
+        "compras_ingeridas": totals["compra"],
+        "itens_ingeridos": totals["itens"],
+        "resultados_ingeridos": totals["resultados"],
+        "empresas_fornecedoras_criadas_ou_vinculadas": totals["empresas"],
+        "empresas_enriquecidas_contato": totals["enriquecidas"],
+        "max_workers": max_workers,
     }
     log.info("ETL PNCP finalizado: %s", resumo)
     return resumo
