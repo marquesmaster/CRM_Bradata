@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     lusha_max_contatos_por_empresa: int = 3
     lusha_cargos_prioridade: str = "CTO,Chief Technology Officer,Head of IT,Head of Technology,Diretor de Tecnologia,Gerente de TI,IT Manager,CIO,Contract Manager,Gerente de Contratos,Head of Procurement"
 
+    # SMTP (Gmail / Google Workspace)
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_name: str = "Bradata"
+    smtp_use_tls: bool = True
+    smtp_reply_to: str = ""
+
     @property
     def icp_cnaes_ti_list(self) -> list[str]:
         return [c.strip() for c in self.icp_cnaes_ti.split(",") if c.strip()]

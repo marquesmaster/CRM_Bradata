@@ -1,13 +1,37 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import func
 
 from app.core.deps import CurrentUser, DBSession
+from app.models.atividade import Atividade, AtividadeStatus, TipoAtividade
+from app.models.automacao import Automacao, AutomacaoKind
 from app.models.contato import Contato
 from app.models.empresa import Empresa
 from app.schemas.common import Page
 from app.schemas.contato import ContatoCreate, ContatoOut, ContatoUpdate
+from app.services.smtp import SMTPError, enviar_email, render_template
 
 router = APIRouter()
+
+
+class EnviarEmailIn(BaseModel):
+    automacao_id: int | None = None       # template salvo (kind=template_email)
+    assunto: str | None = None            # ou assunto/corpo livres
+    corpo: str | None = None
+    html: bool = False
+    cc: list[str] | None = None
+    bcc: list[str] | None = None
+    reply_to: str | None = None
+    vars_extra: dict[str, str] | None = None    # variáveis extras pra render
+
+
+class PreviewEmailIn(BaseModel):
+    automacao_id: int | None = None
+    assunto: str | None = None
+    corpo: str | None = None
+    vars_extra: dict[str, str] | None = None
 
 
 @router.get("", response_model=Page[ContatoOut])
@@ -69,3 +93,103 @@ def delete_contato(contato_id: int, db: DBSession, _: CurrentUser):
         raise HTTPException(status_code=404, detail="Contato não encontrado")
     db.delete(c)
     db.commit()
+
+
+def _build_render_vars(c: Contato, empresa: Empresa | None, current, extra: dict | None) -> dict:
+    return {
+        "nome": (c.nome or "").split()[0] if c.nome else "",
+        "nome_completo": c.nome or "",
+        "cargo": c.cargo or "",
+        "email": c.email or "",
+        "empresa": (empresa.razao_social or empresa.nome_fantasia) if empresa else "",
+        "remetente": getattr(current, "name", None) or current.email,
+        "remetente_email": current.email,
+        **(extra or {}),
+    }
+
+
+@router.post("/{contato_id}/preview-email")
+def preview_email(contato_id: int, payload: PreviewEmailIn, db: DBSession, current: CurrentUser):
+    """Renderiza assunto/corpo (substitui {{nome}}, {{empresa}}, ...) sem enviar."""
+    c = db.get(Contato, contato_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Contato não encontrado")
+
+    assunto = payload.assunto
+    corpo = payload.corpo
+    if payload.automacao_id:
+        a = db.get(Automacao, payload.automacao_id)
+        if not a or a.kind != AutomacaoKind.template_email:
+            raise HTTPException(status_code=400, detail="Template de e-mail inválido")
+        assunto = assunto or a.assunto
+        corpo = corpo or a.corpo
+
+    if not corpo:
+        raise HTTPException(status_code=400, detail="Sem corpo de e-mail")
+
+    empresa = db.get(Empresa, c.empresa_id) if c.empresa_id else None
+    vars_ = _build_render_vars(c, empresa, current, payload.vars_extra)
+    s, b = render_template(assunto or "", corpo, vars_)
+    return {"para": c.email, "assunto": s, "corpo": b, "vars": vars_}
+
+
+@router.post("/{contato_id}/enviar-email")
+def enviar_email_contato(
+    contato_id: int, payload: EnviarEmailIn, db: DBSession, current: CurrentUser
+):
+    """Envia e-mail para o contato via SMTP. Registra Atividade(tipo=email)."""
+    c = db.get(Contato, contato_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Contato não encontrado")
+    if not c.email:
+        raise HTTPException(status_code=400, detail="Contato sem e-mail cadastrado")
+
+    assunto = payload.assunto
+    corpo = payload.corpo
+    automacao = None
+    if payload.automacao_id:
+        automacao = db.get(Automacao, payload.automacao_id)
+        if not automacao or automacao.kind != AutomacaoKind.template_email:
+            raise HTTPException(status_code=400, detail="Template de e-mail inválido")
+        assunto = assunto or automacao.assunto
+        corpo = corpo or automacao.corpo
+
+    if not corpo:
+        raise HTTPException(status_code=400, detail="Sem corpo de e-mail")
+
+    empresa = db.get(Empresa, c.empresa_id) if c.empresa_id else None
+    vars_ = _build_render_vars(c, empresa, current, payload.vars_extra)
+    assunto_r, corpo_r = render_template(assunto or "(sem assunto)", corpo, vars_)
+
+    try:
+        result = enviar_email(
+            c.email,
+            assunto_r,
+            corpo_r,
+            cc=payload.cc,
+            bcc=payload.bcc,
+            html=payload.html,
+            reply_to=payload.reply_to,
+        )
+    except SMTPError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    atv = Atividade(
+        tipo=TipoAtividade.email,
+        titulo=f"E-mail: {assunto_r[:200]}",
+        descricao=corpo_r[:4000],
+        status=AtividadeStatus.concluida,
+        data_atividade=datetime.now(timezone.utc),
+        empresa_id=c.empresa_id,
+        contato_id=c.id,
+        user_id=current.id,
+        resultado=f"enviado para {c.email}",
+    )
+    db.add(atv)
+
+    if automacao:
+        automacao.executada_n_vezes = (automacao.executada_n_vezes or 0) + 1
+        automacao.ultima_execucao = datetime.now(timezone.utc)
+
+    db.commit()
+    return {"ok": True, "para": c.email, "assunto": assunto_r, **result, "atividade_id": atv.id}

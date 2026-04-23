@@ -187,7 +187,8 @@ def enriquecer_empresa(empresa_id: int, db: DBSession, _: CurrentUser):
 
 def _enriquecer_pendentes_job(limit: int) -> None:
     """Roda CNPJ.WS em background para empresas sem website."""
-    import logging, time
+    import logging
+    from app.core.config import settings as _settings
     log = logging.getLogger("empresas.enriquecer-pendentes")
     with SessionLocal() as db:
         pendentes = (
@@ -196,7 +197,11 @@ def _enriquecer_pendentes_job(limit: int) -> None:
             .limit(limit)
             .all()
         )
-        log.info("Enriquecendo %s empresas pendentes via CNPJ.WS", len(pendentes))
+        log.info(
+            "Enriquecendo %s empresas pendentes via CNPJ.WS (%s)",
+            len(pendentes),
+            "comercial/token" if _settings.cnpj_ws_token else "público",
+        )
         ok = err = 0
         for e in pendentes:
             try:
@@ -208,7 +213,6 @@ def _enriquecer_pendentes_job(limit: int) -> None:
                 log.warning("Falha empresa %s: %s", e.id, ex)
                 db.rollback()
                 err += 1
-            time.sleep(0.5)  # respeita rate-limit do CNPJ.WS
         log.info("Enriquecimento concluído: %s ok, %s erros", ok, err)
 
 

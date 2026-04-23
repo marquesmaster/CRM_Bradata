@@ -68,7 +68,8 @@ def _search_contacts_by_domain(domain: str, titles: list[str], limit: int) -> li
 
     url = settings.lusha_base_url.rstrip("/") + "/prospecting/contact/search"
     payload = {
-        "pages": {"page": 0, "size": max(1, min(limit, 40))},
+        # API exige size >= 10 e <= 40
+        "pages": {"page": 0, "size": max(10, min(limit, 40))},
         "filters": {
             "companies": {"include": {"domains": [domain]}},
             "contacts": {"include": {"jobTitles": titles}} if titles else {},
