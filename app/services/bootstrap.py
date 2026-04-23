@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -25,22 +26,31 @@ DEFAULT_ESTAGIOS = [
 
 
 def ensure_default_admin(db: Session) -> None:
-    existing = db.query(User).filter(User.role == UserRole.admin).first()
-    if existing:
+    """Cria o admin default se não existir. Tolerante a race (múltiplos workers)."""
+    email = settings.default_admin_email.lower()
+    if (
+        db.query(User).filter(User.email == email).first()
+        or db.query(User).filter(User.role == UserRole.admin).first()
+    ):
         return
     user = User(
         nome="Admin Bradata",
-        email=settings.default_admin_email.lower(),
+        email=email,
         senha_hash=hash_password(settings.default_admin_password),
         role=UserRole.admin,
         is_active=True,
     )
     db.add(user)
-    db.commit()
-    log.info("Admin default criado: %s", user.email)
+    try:
+        db.commit()
+        log.info("Admin default criado: %s", user.email)
+    except IntegrityError:
+        db.rollback()
+        log.info("Admin default já existia (race): %s", email)
 
 
 def ensure_default_pipeline(db: Session) -> None:
+    """Cria o pipeline default se não existir. Tolerante a race."""
     existing = db.query(Pipeline).filter(Pipeline.nome == DEFAULT_PIPELINE_NAME).first()
     if existing:
         return
@@ -48,5 +58,9 @@ def ensure_default_pipeline(db: Session) -> None:
     for e in DEFAULT_ESTAGIOS:
         pipeline.estagios.append(PipelineEstagio(**e))
     db.add(pipeline)
-    db.commit()
-    log.info("Pipeline default criado: %s", DEFAULT_PIPELINE_NAME)
+    try:
+        db.commit()
+        log.info("Pipeline default criado: %s", DEFAULT_PIPELINE_NAME)
+    except IntegrityError:
+        db.rollback()
+        log.info("Pipeline default já existia (race): %s", DEFAULT_PIPELINE_NAME)
