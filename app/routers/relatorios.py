@@ -10,8 +10,15 @@ from app.models.lead import Lead, LeadStatus
 from app.models.oportunidade import Oportunidade, OportunidadeStatus, Pipeline, PipelineEstagio
 from app.models.pncp import PncpContrato, PncpResultado
 from app.models.user import User
+from app.services.analytics import compute_analytics
 
 router = APIRouter()
+
+
+@router.get("/analytics")
+def analytics(db: DBSession, _: CurrentUser):
+    """ROI, CAC, LTV, comissão, clientes por recência, deals."""
+    return compute_analytics(db)
 
 
 @router.get("/dashboard")
