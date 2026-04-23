@@ -44,9 +44,19 @@ class Settings(BaseSettings):
     cac_mensal: float = 5000.0               # custo de aquisição médio mensal (R$)
     ltv_meses_retencao: float = 18.0         # retenção média em meses (proxy LTV)
 
+    # Lusha — enriquecimento de contatos
+    lusha_api_key: str = ""
+    lusha_base_url: str = "https://api.lusha.com"
+    lusha_max_contatos_por_empresa: int = 3
+    lusha_cargos_prioridade: str = "CTO,Chief Technology Officer,Head of IT,Head of Technology,Diretor de Tecnologia,Gerente de TI,IT Manager,CIO,Contract Manager,Gerente de Contratos,Head of Procurement"
+
     @property
     def icp_cnaes_ti_list(self) -> list[str]:
         return [c.strip() for c in self.icp_cnaes_ti.split(",") if c.strip()]
+
+    @property
+    def lusha_cargos_prioridade_list(self) -> list[str]:
+        return [c.strip() for c in self.lusha_cargos_prioridade.split(",") if c.strip()]
 
 
 @lru_cache

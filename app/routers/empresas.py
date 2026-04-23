@@ -13,6 +13,7 @@ from app.schemas.empresa import EmpresaCreate, EmpresaOut, EmpresaUpdate
 from app.schemas.nota import NotaOut
 from app.services.cnpj_ws import enrich_empresa_from_cnpjws
 from app.services.empresa_service import classify_icp
+from app.services.lusha import enriquecer_empresa as lusha_enriquecer, LushaError
 
 router = APIRouter()
 
@@ -138,6 +139,47 @@ def enriquecer_empresa(empresa_id: int, db: DBSession, _: CurrentUser):
     db.commit()
     db.refresh(empresa)
     return _serialize(db, empresa)
+
+
+@router.post("/{empresa_id}/enriquecer-lusha")
+def enriquecer_lusha(empresa_id: int, db: DBSession, _: CurrentUser):
+    """Busca decisores (CTO, Head de TI, etc.) via Lusha. Cache permanente."""
+    empresa = db.get(Empresa, empresa_id)
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+    try:
+        resumo = lusha_enriquecer(db, empresa)
+    except LushaError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return resumo
+
+
+@router.get("/{empresa_id}/contatos")
+def listar_contatos_empresa(empresa_id: int, db: DBSession, _: CurrentUser):
+    from app.models.contato import Contato  # local para evitar circular
+    if not db.get(Empresa, empresa_id):
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+    contatos = (
+        db.query(Contato)
+        .filter(Contato.empresa_id == empresa_id)
+        .order_by(Contato.principal.desc(), Contato.decisor.desc(), Contato.nome)
+        .all()
+    )
+    return [
+        {
+            "id": c.id,
+            "nome": c.nome,
+            "cargo": c.cargo,
+            "email": c.email,
+            "telefone": c.telefone,
+            "celular": c.celular,
+            "linkedin_url": c.linkedin_url,
+            "decisor": c.decisor,
+            "fonte": c.fonte,
+            "created_at": c.created_at,
+        }
+        for c in contatos
+    ]
 
 
 @router.get("/{empresa_id}/timeline")
