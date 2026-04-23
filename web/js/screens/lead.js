@@ -52,6 +52,26 @@ function LeadDetail({ companyId, onBack }) {
     }
   };
 
+  const enriquecerCnpj = async () => {
+    setEnriching(true);
+    setEnrichMsg(null);
+    try {
+      const r = await window.API.api(`/empresas/${c.id}/enriquecer`, { method: 'POST' });
+      if (r.website || r.email) {
+        setEnrichMsg({ tone: 'success', text: `CNPJ.WS: dados básicos preenchidos. Website: ${r.website || '—'}` });
+        await window.API.refresh(); // recarrega DATA pra mostrar website
+      } else {
+        setEnrichMsg({ tone: 'warn', text: 'CNPJ.WS retornou sem website nem email — empresa pode não ter cadastro ativo.' });
+      }
+    } catch (e) {
+      setEnrichMsg({ tone: 'danger', text: e.message });
+    } finally {
+      setEnriching(false);
+    }
+  };
+
+  const semDominio = !c.website;
+
   return (
     <>
       <div className="page-head">
@@ -71,12 +91,33 @@ function LeadDetail({ companyId, onBack }) {
           </div>
         </div>
         <div className="actions">
-          <button className="btn btn-ghost btn-sm" onClick={enriquecerLusha} disabled={enriching}>
+          {semDominio && (
+            <button className="btn btn-ghost btn-sm" onClick={enriquecerCnpj} disabled={enriching}>
+              <I.refresh size={12}/>{enriching ? 'Buscando…' : 'Buscar dados na Receita (CNPJ.WS)'}
+            </button>
+          )}
+          <button className="btn btn-ghost btn-sm" onClick={enriquecerLusha} disabled={enriching || semDominio} title={semDominio ? 'Enriqueça o CNPJ primeiro pra ter o domínio' : ''}>
             <I.phone size={12}/>{enriching ? 'Buscando…' : 'Enriquecer contatos (Lusha)'}
           </button>
           <button className="btn btn-accent btn-sm"><I.plus size={12}/>Nova oportunidade</button>
         </div>
       </div>
+
+      {semDominio && !enrichMsg && (
+        <div style={{
+          padding:'12px 16px', marginBottom:'var(--gap)', borderRadius:10, fontSize:13,
+          background:'hsl(var(--warning-soft))', color:'hsl(var(--warning))',
+          border:'1px solid hsl(var(--warning) / .3)', display:'flex', gap:10, alignItems:'center'
+        }}>
+          <I.sparkle size={14}/>
+          <div style={{flex:1}}>
+            Esta empresa veio do PNCP sem website/email. <strong>Enriqueça com a Receita Federal (CNPJ.WS)</strong> primeiro — depois a Lusha consegue achar contatos.
+          </div>
+          <button className="btn btn-xs btn-accent" onClick={enriquecerCnpj} disabled={enriching}>
+            Enriquecer agora
+          </button>
+        </div>
+      )}
 
       {enrichMsg && (
         <div style={{

@@ -137,6 +137,13 @@ function Accounts() {
           <div className="page-sub">Lista de fornecedores identificados nos contratos PNCP</div>
         </div>
         <div className="actions">
+          <button className="btn btn-ghost btn-sm" onClick={async () => {
+            if (!confirm('Enriquecer todas empresas sem website (CNPJ.WS, ~2/s)?')) return;
+            try {
+              const r = await window.API.api('/empresas/enriquecer-pendentes?limit=500', { method: 'POST' });
+              alert(r.message + '\nAcompanhe nos logs. Em alguns minutos, recarregue.');
+            } catch (e) { alert(e.message); }
+          }}><I.refresh size={12}/>Enriquecer pendentes</button>
           <span className="chip">{filtered.length} fornecedores</span>
         </div>
       </div>

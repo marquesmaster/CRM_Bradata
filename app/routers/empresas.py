@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from sqlalchemy import and_, func, or_
 
-from app.core.deps import CurrentUser, DBSession
+from app.core.deps import AdminUser, CurrentUser, DBSession
+from app.core.database import SessionLocal
 from app.models.atividade import Atividade
 from app.models.contato import Contato
 from app.models.empresa import Empresa, EmpresaStatus
@@ -182,6 +183,47 @@ def enriquecer_empresa(empresa_id: int, db: DBSession, _: CurrentUser):
     db.commit()
     db.refresh(empresa)
     return _serialize(db, empresa)
+
+
+def _enriquecer_pendentes_job(limit: int) -> None:
+    """Roda CNPJ.WS em background para empresas sem website."""
+    import logging, time
+    log = logging.getLogger("empresas.enriquecer-pendentes")
+    with SessionLocal() as db:
+        pendentes = (
+            db.query(Empresa)
+            .filter(Empresa.website.is_(None))
+            .limit(limit)
+            .all()
+        )
+        log.info("Enriquecendo %s empresas pendentes via CNPJ.WS", len(pendentes))
+        ok = err = 0
+        for e in pendentes:
+            try:
+                if enrich_empresa_from_cnpjws(e):
+                    classify_icp(e)
+                    db.commit()
+                    ok += 1
+            except Exception as ex:
+                log.warning("Falha empresa %s: %s", e.id, ex)
+                db.rollback()
+                err += 1
+            time.sleep(0.5)  # respeita rate-limit do CNPJ.WS
+        log.info("Enriquecimento concluído: %s ok, %s erros", ok, err)
+
+
+@router.post("/enriquecer-pendentes")
+def enriquecer_pendentes(
+    bg: BackgroundTasks,
+    _: AdminUser,
+    limit: int = Query(500, ge=1, le=5000),
+):
+    """Enriquece em background todas as empresas com website=NULL via CNPJ.WS.
+
+    Respeita rate-limit (~2 req/s). Para 100 empresas leva ~50s.
+    """
+    bg.add_task(_enriquecer_pendentes_job, limit)
+    return {"message": f"Enriquecimento de até {limit} empresas pendentes agendado", "limit": limit}
 
 
 @router.post("/{empresa_id}/enriquecer-lusha")
