@@ -99,20 +99,21 @@ function Users() {
       <div className="card">
         <table className="table">
           <thead><tr>
-            <th>Usuário</th><th>Papel</th><th>Time</th><th>Status</th><th>Último acesso</th><th></th>
+            <th style={{width:60}}>ID</th><th>Usuário</th><th>Papel</th><th>Time</th><th>Status</th><th>Último acesso</th><th></th>
           </tr></thead>
           <tbody>
-            {loading && <tr><td colSpan="6" style={{textAlign:'center', padding:32, color:'hsl(var(--fg-muted))'}}>Carregando…</td></tr>}
-            {!loading && filtered.length === 0 && <tr><td colSpan="6" style={{textAlign:'center', padding:32, color:'hsl(var(--fg-muted))'}}>Nenhum usuário.</td></tr>}
+            {loading && <tr><td colSpan="7" style={{textAlign:'center', padding:32, color:'hsl(var(--fg-muted))'}}>Carregando…</td></tr>}
+            {!loading && filtered.length === 0 && <tr><td colSpan="7" style={{textAlign:'center', padding:32, color:'hsl(var(--fg-muted))'}}>Nenhum usuário.</td></tr>}
             {filtered.map(u => {
               const isYou = u.id === String(window.DATA.CURRENT_USER.id);
               const role = ROLES[u.role] || { label: u.role, color: '#6B7280' };
               return (
                 <tr key={u.id}>
+                  <td className="mono faint" style={{fontSize:12}}>#{u.id}</td>
                   <td>
                     <div className="row" style={{gap:10}}>
                       <UI.Avatar name={u.name} size={32}/>
-                      <div>
+                      <div style={{minWidth:0}}>
                         <strong style={{fontSize:13}}>{u.name}</strong>
                         {isYou && <span className="chip primary" style={{marginLeft:6, fontSize:9.5, padding:'1px 5px'}}>Você</span>}
                         <div className="muted mono" style={{fontSize:11}}>{u.email}</div>
@@ -163,19 +164,32 @@ function InviteUserModal({ onClose, onCreated }) {
   const [email, setEmail] = React.useState('');
   const [role, setRole] = React.useState('bdr');
   const [team, setTeam] = React.useState('');
+  const [senha, setSenha] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
   const [err, setErr] = React.useState(null);
+  const [sucesso, setSucesso] = React.useState(null);
 
   const submit = async () => {
     if (!nome || !email) return;
     setSubmitting(true);
     setErr(null);
     try {
-      await window.API.api('/users/invite', {
+      // 1. Cria com status=pendente
+      const novo = await window.API.api('/users/invite', {
         method: 'POST',
         body: { nome, email: email.trim().toLowerCase(), role, team: team || null },
       });
-      onCreated();
+      // 2. Se veio senha, ativa + define
+      if (senha && senha.length >= 8) {
+        await window.API.api(`/users/${novo.id}`, {
+          method: 'PATCH',
+          body: { senha, status: 'ativo', is_active: true },
+        });
+        setSucesso(`Usuário #${novo.id} criado e ativado com senha inicial.`);
+      } else {
+        setSucesso(`Usuário #${novo.id} criado como PENDENTE (defina senha depois).`);
+      }
+      setTimeout(onCreated, 1500);
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -218,19 +232,36 @@ function InviteUserModal({ onClose, onCreated }) {
               <input className="input" value={team} onChange={e=>setTeam(e.target.value)} placeholder="Sales / SDR / Operações" style={{width:'100%', padding:'9px 12px', border:'1px solid hsl(var(--border))', borderRadius:8, background:'hsl(var(--surface))', color:'hsl(var(--fg))', fontSize:13, outline:'none'}}/>
             </div>
           </div>
+          <div>
+            <div className="form-label">Senha inicial (opcional — ativa direto)</div>
+            <input
+              className="input"
+              type="password"
+              value={senha}
+              onChange={e=>setSenha(e.target.value)}
+              placeholder="Mínimo 8 caracteres — deixe em branco para criar pendente"
+            />
+          </div>
           {err && (
-            <div style={{padding:'8px 12px', background:'hsl(var(--danger-soft))', color:'hsl(var(--danger))', borderRadius:8, fontSize:12.5, border:'1px solid hsl(var(--danger) / .2)'}}>
+            <div style={{padding:'10px 14px', background:'hsl(var(--danger-soft))', color:'hsl(var(--danger))', borderRadius:8, fontSize:12.5, border:'1px solid hsl(var(--danger) / .25)'}}>
               {err}
             </div>
           )}
-          <div style={{padding:10, background:'hsl(var(--info-soft))', borderRadius:8, fontSize:12, color:'hsl(var(--info))'}}>
-            <I.sparkle size={12} style={{verticalAlign:'middle', marginRight:6}}/>
-            Após criar, use <code>PATCH /users/&#123;id&#125;</code> com <code>senha</code> para definir a senha inicial.
-          </div>
+          {sucesso && (
+            <div style={{padding:'10px 14px', background:'hsl(var(--success-soft))', color:'hsl(var(--success))', borderRadius:8, fontSize:12.5, border:'1px solid hsl(var(--success) / .25)'}}>
+              ✓ {sucesso}
+            </div>
+          )}
+          {!sucesso && (
+            <div style={{padding:'10px 14px', background:'hsl(var(--info-soft))', borderRadius:8, fontSize:12, color:'hsl(var(--info))', lineHeight:1.5}}>
+              Se definir a senha aqui, o usuário já entra como <strong>ativo</strong> e pode logar imediatamente.
+              Sem senha, fica <strong>pendente</strong> até um admin definir.
+            </div>
+          )}
         </div>
         <div className="modal-foot">
           <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={submitting}>Cancelar</button>
-          <button className="btn btn-accent btn-sm" onClick={submit} disabled={submitting || !nome || !email}>
+          <button className="btn btn-accent btn-sm" onClick={submit} disabled={submitting || !nome || !email || (senha && senha.length < 8)}>
             {submitting ? 'Criando…' : 'Criar usuário'}
           </button>
         </div>
