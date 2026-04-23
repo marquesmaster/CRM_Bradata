@@ -379,3 +379,4 @@ function Info({ label, value, hot }) {
 }
 
 window.LeadDetail = LeadDetail;
+window.EmailModal = EmailModal;

@@ -35,23 +35,89 @@ class PreviewEmailIn(BaseModel):
     vars_extra: dict[str, str] | None = None
 
 
-@router.get("", response_model=Page[ContatoOut])
+@router.get("")
 def list_contatos(
     db: DBSession,
     _: CurrentUser,
+    q: str | None = None,
     empresa_id: int | None = None,
+    cargo: str | None = None,             # busca substring case-insensitive
     decisor: bool | None = None,
+    fonte: str | None = None,             # lusha / manual / cnpjws / linkedin
+    has_email: bool | None = None,
+    uf: str | None = None,                # filtra por UF da empresa
+    sector: str | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
 ):
-    query = db.query(Contato)
+    """Lista global de contatos com filtros — para escolher por empresa+cargo."""
+    from sqlalchemy import or_
+    query = db.query(Contato).join(Empresa, Empresa.id == Contato.empresa_id, isouter=True)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(Contato.nome.ilike(like), Contato.email.ilike(like)))
     if empresa_id:
         query = query.filter(Contato.empresa_id == empresa_id)
+    if cargo:
+        query = query.filter(Contato.cargo.ilike(f"%{cargo}%"))
     if decisor is not None:
         query = query.filter(Contato.decisor == decisor)
+    if fonte:
+        query = query.filter(Contato.fonte == fonte)
+    if has_email is True:
+        query = query.filter(Contato.email.isnot(None), Contato.email != "")
+    elif has_email is False:
+        query = query.filter(or_(Contato.email.is_(None), Contato.email == ""))
+    if uf:
+        query = query.filter(Empresa.uf == uf.upper())
+    if sector:
+        query = query.filter(Empresa.sector == sector)
+
     total = query.with_entities(func.count(Contato.id)).scalar() or 0
-    items = query.order_by(Contato.nome).offset((page - 1) * size).limit(size).all()
-    return Page[ContatoOut](items=items, total=total, page=page, size=size)
+    rows = (
+        query.order_by(Contato.decisor.desc(), Contato.nome)
+        .offset((page - 1) * size)
+        .limit(size)
+        .all()
+    )
+    items = [
+        {
+            "id": c.id,
+            "nome": c.nome,
+            "cargo": c.cargo,
+            "departamento": c.departamento,
+            "email": c.email,
+            "telefone": c.telefone,
+            "celular": c.celular,
+            "linkedin_url": c.linkedin_url,
+            "decisor": c.decisor,
+            "fonte": c.fonte,
+            "empresa_id": c.empresa_id,
+            "empresa": (
+                {"id": c.empresa.id, "razao_social": c.empresa.razao_social,
+                 "nome_fantasia": c.empresa.nome_fantasia, "uf": c.empresa.uf,
+                 "sector": c.empresa.sector, "cnpj": c.empresa.cnpj}
+                if c.empresa else None
+            ),
+            "created_at": c.created_at,
+        }
+        for c in rows
+    ]
+    return {"items": items, "total": total, "page": page, "size": size}
+
+
+@router.get("/cargos/distinct")
+def cargos_distinct(db: DBSession, _: CurrentUser):
+    """Lista de cargos distintos (pra autocomplete)."""
+    rows = (
+        db.query(Contato.cargo)
+        .filter(Contato.cargo.isnot(None), Contato.cargo != "")
+        .distinct()
+        .order_by(Contato.cargo)
+        .limit(500)
+        .all()
+    )
+    return [r[0] for r in rows if r[0]]
 
 
 @router.get("/{contato_id}", response_model=ContatoOut)

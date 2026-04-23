@@ -1,4 +1,4 @@
-"""APScheduler para rodar o ETL PNCP diariamente."""
+"""APScheduler para jobs recorrentes (PNCP diário + cadência de e-mail)."""
 from __future__ import annotations
 
 import logging
@@ -8,6 +8,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app.core.config import settings
 from app.core.database import SessionLocal
+from app.services.cadencia import run_cadencia_job
 from app.services.pncp.etl import run_full_etl
 
 log = logging.getLogger("scheduler")
@@ -24,6 +25,13 @@ def _job_pncp_daily() -> None:
             log.exception("Erro no job diário PNCP: %s", e)
 
 
+def _job_cadencia() -> None:
+    try:
+        run_cadencia_job()
+    except Exception as e:
+        log.exception("Erro no job de cadência: %s", e)
+
+
 def start_scheduler() -> None:
     global _scheduler
     if _scheduler is not None:
@@ -35,9 +43,16 @@ def start_scheduler() -> None:
         id="pncp_daily",
         replace_existing=True,
     )
+    # Cadência: roda uma vez por dia 09:00 (horário comercial BR)
+    _scheduler.add_job(
+        _job_cadencia,
+        CronTrigger(hour=9, minute=0),
+        id="cadencia_followup",
+        replace_existing=True,
+    )
     _scheduler.start()
     log.info(
-        "Scheduler iniciado (PNCP diário %02d:%02d America/Sao_Paulo)",
+        "Scheduler iniciado (PNCP %02d:%02d, cadência 09:00 America/Sao_Paulo)",
         settings.pncp_daily_cron_hour,
         settings.pncp_daily_cron_minute,
     )

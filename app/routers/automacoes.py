@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 
 from app.core.deps import AdminUser, CurrentUser, DBSession
 from app.models.automacao import Automacao, AutomacaoKind
 from app.schemas.automacao import AutomacaoCreate, AutomacaoOut, AutomacaoUpdate
+from app.services.cadencia import run_cadencia_job
 
 router = APIRouter()
 
@@ -58,3 +59,10 @@ def delete_automacao(auto_id: int, db: DBSession, _: AdminUser):
         raise HTTPException(status_code=404, detail="Automação não encontrada")
     db.delete(a)
     db.commit()
+
+
+@router.post("/cadencia/run-now")
+def cadencia_run_now(bg: BackgroundTasks, _: AdminUser):
+    """Roda todas as cadências ativas em background (normalmente roda 09:00 diário)."""
+    bg.add_task(run_cadencia_job)
+    return {"message": "Cadência agendada para execução imediata em background"}

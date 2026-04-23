@@ -5,6 +5,7 @@ const NAV = [
   { id:'pncp',        label:'Descoberta PNCP', ico:'radar', badge:'novo' },
   { id:'contratos',   label:'Contratos',    ico:'doc' },
   { id:'accounts',    label:'Fornecedores', ico:'building' },
+  { id:'contatos',    label:'Contatos',     ico:'user' },
   { id:'prospeccao',  label:'Prospecção',   ico:'target' },
   { id:'deals',       label:'Deals',        ico:'money' },
   { id:'pipeline',    label:'Pipeline',     ico:'kanban' },
@@ -118,6 +119,7 @@ function App({ onLogout }) {
       case 'contratos':         return <Contratos/>;
       case 'contrato':          return <ContratoDetail contratoId={params.contratoId} onBack={()=>setRoute('contratos')}/>;
       case 'accounts':          return <Accounts/>;
+      case 'contatos':          return <Contatos/>;
       case 'prospeccao':        return <Prospeccao/>;
       case 'prospeccaoDetail':  return <ProspeccaoDetail leadId={params.leadId} onBack={()=>setRoute('prospeccao')}/>;
       case 'deals':             return <Deals/>;
