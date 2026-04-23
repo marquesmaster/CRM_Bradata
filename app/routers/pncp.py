@@ -18,6 +18,7 @@ from app.schemas.pncp import (
     PncpResultadoOut,
 )
 from app.services.ai_classifier import classificar_contrato
+from app.services.ai_batch_classifier import classificar_todos_pendentes
 from app.services.pncp.compra import (
     ingest_compra_by_contrato,
     ingest_compra_itens,
@@ -136,6 +137,30 @@ def run_etl(payload: EtlRunRequest, bg: BackgroundTasks, current: AdminUser):
     """Dispara o ETL completo em background."""
     bg.add_task(_run_etl_job, payload, current.id)
     return {"message": "ETL PNCP agendado em background", "payload": payload.model_dump()}
+
+
+def _run_ai_batch_job(batch_size: int, limit: int | None, triggered_by_id: int) -> None:
+    classificar_todos_pendentes(batch_size=batch_size, limit=limit, triggered_by_id=triggered_by_id)
+
+
+@router.post("/classificar-batch")
+def classificar_batch_endpoint(
+    bg: BackgroundTasks,
+    current: AdminUser,
+    batch_size: int = 30,
+    limit: int | None = None,
+):
+    """Classifica em batch todos os contratos PNCP sem ai_classificacao.
+
+    Usa 1 chamada DeepSeek para N contratos (default 30), economizando ~30x
+    em custo vs classificar um a um. Roda em background.
+    """
+    bg.add_task(_run_ai_batch_job, batch_size, limit, current.id)
+    return {
+        "message": f"Classificação IA em batch agendada (lotes de {batch_size})",
+        "batch_size": batch_size,
+        "limit": limit,
+    }
 
 
 @router.post("/contratos/{contrato_id}/classificar-ia")
