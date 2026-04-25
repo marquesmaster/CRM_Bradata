@@ -1,27 +1,41 @@
 // Main App shell — bootstrap auth + roteamento + shell
 const NAV = [
-  { id:'dashboard',   label:'Dashboard',    ico:'dashboard' },
-  { id:'execucoes',   label:'Execuções',    ico:'refresh',  badge:'ao vivo' },
-  { id:'pncp',        label:'Descoberta PNCP', ico:'radar', badge:'novo' },
-  { id:'contratos',   label:'Contratos',    ico:'doc' },
-  { id:'accounts',    label:'Fornecedores', ico:'building' },
-  { id:'contatos',    label:'Contatos',     ico:'user' },
-  { id:'prospeccao',  label:'Prospecção',   ico:'target' },
-  { id:'deals',       label:'Deals',        ico:'money' },
-  { id:'pipeline',    label:'Pipeline',     ico:'kanban' },
-  { id:'propostas',   label:'Propostas',    ico:'doc' },
-  { id:'activities',  label:'Atividades',   ico:'check' },
-  { id:'tickets',     label:'Tickets',      ico:'help' },
-  { id:'agenda',      label:'Agenda',       ico:'calendar' },
-  { id:'reports',     label:'Relatórios',   ico:'chart' },
-  { id:'chat',        label:'Chat interno', ico:'chat' },
-  { id:'automacoes',  label:'Automações',   ico:'zap',      section:'admin' },
-  { id:'documentos',  label:'Documentos',   ico:'doc',      section:'admin' },
-  { id:'historicoGlobal', label:'Histórico', ico:'clock',    section:'admin' },
-  { id:'lixeira',     label:'Lixeira',      ico:'x',        section:'admin' },
-  { id:'users',       label:'Usuários',     ico:'users',    section:'admin' },
-  { id:'settings',    label:'Configurações',ico:'settings', section:'admin' },
+  // Geral
+  { id:'dashboard',   label:'Dashboard',    ico:'dashboard', section:'Geral' },
+
+  // PNCP & Descoberta
+  { id:'execucoes',   label:'Execuções',    ico:'refresh',   section:'PNCP & Descoberta', badge:'ao vivo' },
+  { id:'pncp',        label:'Descoberta PNCP', ico:'radar',  section:'PNCP & Descoberta', badge:'novo' },
+  { id:'contratos',   label:'Contratos',    ico:'doc',       section:'PNCP & Descoberta' },
+
+  // Comercial
+  { id:'accounts',    label:'Fornecedores', ico:'building',  section:'Comercial' },
+  { id:'contatos',    label:'Contatos',     ico:'user',      section:'Comercial' },
+  { id:'prospeccao',  label:'Prospecção',   ico:'target',    section:'Comercial' },
+  { id:'deals',       label:'Deals',        ico:'money',     section:'Comercial' },
+  { id:'pipeline',    label:'Pipeline',     ico:'kanban',    section:'Comercial' },
+  { id:'propostas',   label:'Propostas',    ico:'doc',       section:'Comercial' },
+
+  // Operação
+  { id:'activities',  label:'Atividades',   ico:'check',     section:'Operação' },
+  { id:'tickets',     label:'Tickets',      ico:'help',      section:'Operação' },
+  { id:'agenda',      label:'Agenda',       ico:'calendar',  section:'Operação' },
+  { id:'chat',        label:'Chat interno', ico:'chat',      section:'Operação' },
+
+  // Análise
+  { id:'reports',     label:'Relatórios',   ico:'chart',     section:'Análise' },
+
+  // Administração
+  { id:'automacoes',      label:'Automações',    ico:'zap',      section:'Administração' },
+  { id:'documentos',      label:'Documentos',    ico:'doc',      section:'Administração' },
+  { id:'historicoGlobal', label:'Histórico',     ico:'clock',    section:'Administração' },
+  { id:'lixeira',         label:'Lixeira',       ico:'x',        section:'Administração' },
+  { id:'users',           label:'Usuários',      ico:'users',    section:'Administração' },
+  { id:'settings',        label:'Configurações', ico:'settings', section:'Administração' },
 ];
+
+// Ordem dos grupos na sidebar
+const NAV_SECTIONS = ['Geral', 'PNCP & Descoberta', 'Comercial', 'Operação', 'Análise', 'Administração'];
 
 function Boot() {
   const [authed, setAuthed] = React.useState(() => window.API.auth.isAuthed());
@@ -177,28 +191,44 @@ function App({ onLogout }) {
             <I.chevron size={14} style={{transform: collapsed?'rotate(0deg)':'rotate(180deg)', transition:'.2s'}}/>
           </button>
         </div>
-        <nav style={{flex:1, overflowY:'auto', padding:'14px 12px', display:'flex', flexDirection:'column', gap:2}}>
-          {NAV.filter(n=>!n.section).map(n => (
-            <button key={n.id} className={`nav-item ${route===n.id?'active':''}`} onClick={()=>window.__nav(n.id)}
-              style={{display:'flex', alignItems:'center', gap:11, padding:'9px 10px', borderRadius:8, color: route===n.id?'white':'hsl(var(--sidebar-fg) / .78)', background: route===n.id?'hsl(0 0% 100% / .08)':'transparent', fontSize:13.5, fontWeight:500, width:'100%', textAlign:'left', position:'relative'}}>
-              {React.createElement(I[n.ico] || I.dashboard, { size: 16 })}
-              {!collapsed && <>
-                <span style={{flex:1}}>{n.label}</span>
-                {n.id === 'chat' && chatUnread > 0 && (
-                  <span className="chip" style={{background:'hsl(var(--b-accent))', color:'white', fontSize:9.5, padding:'2px 7px', minWidth:18, justifyContent:'center'}}>{chatUnread}</span>
+        <nav style={{flex:1, overflowY:'auto', padding:'10px 12px', display:'flex', flexDirection:'column', gap:2}}>
+          {NAV_SECTIONS.map((sectionName, sectionIdx) => {
+            const items = NAV.filter(n => n.section === sectionName);
+            if (items.length === 0) return null;
+            return (
+              <React.Fragment key={sectionName}>
+                {!collapsed && (
+                  <div style={{
+                    padding: sectionIdx === 0 ? '8px 12px 4px' : '14px 12px 4px',
+                    fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.08em',
+                    color: 'hsl(var(--sidebar-muted))', fontWeight: 600,
+                  }}>{sectionName}</div>
                 )}
-                {n.badge && n.id !== 'chat' && <span className="chip primary" style={{fontSize:9, padding:'1px 6px'}}>{n.badge}</span>}
-              </>}
-            </button>
-          ))}
-          {!collapsed && <div style={{padding:'14px 12px 6px', fontSize:9.5, textTransform:'uppercase', letterSpacing:'.08em', color:'hsl(var(--sidebar-muted))', fontWeight:600}}>Administração</div>}
-          {NAV.filter(n=>n.section==='admin').map(n => (
-            <button key={n.id} className={`nav-item ${route===n.id?'active':''}`} onClick={()=>window.__nav(n.id)}
-              style={{display:'flex', alignItems:'center', gap:11, padding:'9px 10px', borderRadius:8, color: route===n.id?'white':'hsl(var(--sidebar-fg) / .78)', background: route===n.id?'hsl(0 0% 100% / .08)':'transparent', fontSize:13.5, fontWeight:500, width:'100%', textAlign:'left'}}>
-              {React.createElement(I[n.ico] || I.settings, { size: 16 })}
-              {!collapsed && <span>{n.label}</span>}
-            </button>
-          ))}
+                {collapsed && sectionIdx > 0 && (
+                  <div style={{height:1, background:'hsl(0 0% 100% / .08)', margin:'8px 12px'}}/>
+                )}
+                {items.map(n => (
+                  <button key={n.id}
+                    className={`nav-item ${route===n.id?'active':''}`}
+                    onClick={()=>window.__nav(n.id)}
+                    title={collapsed ? n.label : undefined}
+                    style={{display:'flex', alignItems:'center', gap:11, padding:'9px 10px', borderRadius:8,
+                      color: route===n.id?'white':'hsl(var(--sidebar-fg) / .78)',
+                      background: route===n.id?'hsl(0 0% 100% / .08)':'transparent',
+                      fontSize:13.5, fontWeight:500, width:'100%', textAlign:'left', position:'relative'}}>
+                    {React.createElement(I[n.ico] || I.dashboard, { size: 16 })}
+                    {!collapsed && <>
+                      <span style={{flex:1}}>{n.label}</span>
+                      {n.id === 'chat' && chatUnread > 0 && (
+                        <span className="chip" style={{background:'hsl(var(--b-accent))', color:'white', fontSize:9.5, padding:'2px 7px', minWidth:18, justifyContent:'center'}}>{chatUnread}</span>
+                      )}
+                      {n.badge && n.id !== 'chat' && <span className="chip primary" style={{fontSize:9, padding:'1px 6px'}}>{n.badge}</span>}
+                    </>}
+                  </button>
+                ))}
+              </React.Fragment>
+            );
+          })}
         </nav>
         <div style={{padding:12, borderTop:'1px solid hsl(0 0% 100% / .06)', display:'flex', alignItems:'center', gap:10, color:'hsl(var(--sidebar-fg))', cursor:'pointer'}} onClick={()=>window.__nav('profile')}>
           <UI.Avatar name={CURRENT_USER.name} size={32}/>
