@@ -13,6 +13,10 @@ from app.schemas.oportunidade import (
     OportunidadeOut,
     OportunidadeUpdate,
 )
+from app.models.notification import NotificationKind
+from app.services.historico import log_event
+from app.services import notify
+from app.services.soft_delete import soft_delete, filter_active
 
 router = APIRouter()
 
@@ -28,8 +32,11 @@ def list_oportunidades(
     empresa_id: int | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
+    include_deleted: bool = False,
 ):
     query = db.query(Oportunidade)
+    if not include_deleted:
+        query = filter_active(query, Oportunidade)
     if status_:
         query = query.filter(Oportunidade.status == status_)
     if pipeline_id:
@@ -65,13 +72,17 @@ def create_oportunidade(payload: OportunidadeCreate, db: DBSession, current: Cur
     if op.owner_id is None:
         op.owner_id = current.id
     db.add(op)
+    db.flush()
+    log_event(db, current.id, "oportunidade", op.id, "criou", {
+        "titulo": op.titulo, "valor_estimado": op.valor_estimado, "estagio_id": op.estagio_id,
+    })
     db.commit()
     db.refresh(op)
     return op
 
 
 @router.patch("/{op_id}", response_model=OportunidadeOut)
-def update_oportunidade(op_id: int, payload: OportunidadeUpdate, db: DBSession, _: CurrentUser):
+def update_oportunidade(op_id: int, payload: OportunidadeUpdate, db: DBSession, current: CurrentUser):
     op = db.get(Oportunidade, op_id)
     if not op:
         raise HTTPException(status_code=404, detail="Oportunidade não encontrada")
@@ -80,15 +91,36 @@ def update_oportunidade(op_id: int, payload: OportunidadeUpdate, db: DBSession, 
         estagio = db.get(PipelineEstagio, data["estagio_id"])
         if not estagio or estagio.pipeline_id != op.pipeline_id:
             raise HTTPException(status_code=400, detail="Estágio inválido para o pipeline")
+    before_estagio = op.estagio_id
+    before_owner = op.owner_id
     for k, v in data.items():
         setattr(op, k, v)
+    # Loga mudança de estágio em separado (mais visível)
+    if "estagio_id" in data and before_estagio != op.estagio_id:
+        log_event(db, current.id, "oportunidade", op.id, "mudou_estagio",
+                  {"de_estagio_id": before_estagio, "para_estagio_id": op.estagio_id})
+        # Notifica owner se diferente do user atual
+        if op.owner_id and op.owner_id != current.id:
+            notify.push(db, op.owner_id, NotificationKind.deal_moved,
+                        f"Deal '{op.titulo}' mudou de estágio",
+                        f"{current.nome} moveu o deal", link=f"deal:{op.id}")
+    elif "owner_id" in data and before_owner != op.owner_id:
+        log_event(db, current.id, "oportunidade", op.id, "reatribuiu",
+                  {"de_owner_id": before_owner, "para_owner_id": op.owner_id})
+        if op.owner_id and op.owner_id != current.id:
+            notify.push(db, op.owner_id, NotificationKind.mention,
+                        f"Deal '{op.titulo}' atribuído a você",
+                        f"{current.nome} atribuiu este deal a você", link=f"deal:{op.id}")
+    elif data:
+        log_event(db, current.id, "oportunidade", op.id, "atualizou",
+                  {"campos": list(data.keys())})
     db.commit()
     db.refresh(op)
     return op
 
 
 @router.post("/{op_id}/fechar", response_model=OportunidadeOut)
-def fechar_oportunidade(op_id: int, payload: OportunidadeCloseRequest, db: DBSession, _: CurrentUser):
+def fechar_oportunidade(op_id: int, payload: OportunidadeCloseRequest, db: DBSession, current: CurrentUser):
     op = db.get(Oportunidade, op_id)
     if not op:
         raise HTTPException(status_code=404, detail="Oportunidade não encontrada")
@@ -97,15 +129,45 @@ def fechar_oportunidade(op_id: int, payload: OportunidadeCloseRequest, db: DBSes
     op.status = payload.status
     op.motivo_perda = payload.motivo_perda
     op.data_fechamento_real = date.today()
+    log_event(db, current.id, "oportunidade", op.id,
+              "fechou_ganha" if payload.status == OportunidadeStatus.ganha else "fechou_perdida",
+              {"motivo": payload.motivo_perda, "valor": op.valor_estimado})
+    # Notifica todos admins + owner
+    from app.models.user import User as _User, UserRole
+    admin_ids = [r[0] for r in db.query(_User.id).filter(_User.role == UserRole.admin, _User.is_active.is_(True)).all()]
+    targets = list({*admin_ids, op.owner_id}) if op.owner_id else admin_ids
+    targets = [t for t in targets if t and t != current.id]
+    if payload.status == OportunidadeStatus.ganha:
+        notify.push_many(db, targets, NotificationKind.deal_moved,
+                         f"🎉 Deal GANHO: {op.titulo}",
+                         f"Por {current.nome} — R$ {op.valor_estimado or 0:,.0f}", link=f"deal:{op.id}")
+    else:
+        notify.push_many(db, targets, NotificationKind.deal_moved,
+                         f"Deal perdido: {op.titulo}",
+                         f"Motivo: {payload.motivo_perda or 'sem motivo registrado'}", link=f"deal:{op.id}")
     db.commit()
     db.refresh(op)
     return op
 
 
 @router.delete("/{op_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_oportunidade(op_id: int, db: DBSession, _: CurrentUser):
+def delete_oportunidade(op_id: int, db: DBSession, current: CurrentUser):
     op = db.get(Oportunidade, op_id)
     if not op:
         raise HTTPException(status_code=404, detail="Oportunidade não encontrada")
-    db.delete(op)
+    log_event(db, current.id, "oportunidade", op.id, "excluiu", {"titulo": op.titulo})
+    soft_delete(db, current.id, op)
     db.commit()
+
+
+@router.post("/{op_id}/restore", response_model=OportunidadeOut)
+def restore_oportunidade(op_id: int, db: DBSession, current: CurrentUser):
+    from app.services.soft_delete import restore
+    op = db.get(Oportunidade, op_id)
+    if not op:
+        raise HTTPException(status_code=404, detail="Oportunidade não encontrada")
+    restore(op)
+    log_event(db, current.id, "oportunidade", op.id, "restaurou", None)
+    db.commit()
+    db.refresh(op)
+    return op

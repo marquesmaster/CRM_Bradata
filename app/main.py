@@ -10,10 +10,14 @@ from app.routers import (
     atividades,
     auth,
     automacoes,
+    chat,
     contatos,
+    documentos,
     empresas,
     etl_runs,
+    historico,
     leads,
+    lixeira,
     notas,
     notifications,
     oportunidades,
@@ -21,6 +25,7 @@ from app.routers import (
     pncp,
     propostas,
     relatorios,
+    tickets,
     users,
 )
 from app.services.bootstrap import ensure_default_admin, ensure_default_pipeline
@@ -76,6 +81,11 @@ app.include_router(etl_runs.router, prefix=f"{API_PREFIX}/etl/runs", tags=["etl"
 app.include_router(automacoes.router, prefix=f"{API_PREFIX}/automacoes", tags=["automacoes"])
 app.include_router(propostas.router, prefix=f"{API_PREFIX}/propostas", tags=["propostas"])
 app.include_router(relatorios.router, prefix=f"{API_PREFIX}/relatorios", tags=["relatorios"])
+app.include_router(chat.router, prefix=f"{API_PREFIX}/chat", tags=["chat"])
+app.include_router(historico.router, prefix=f"{API_PREFIX}/historico", tags=["historico"])
+app.include_router(documentos.router, prefix=f"{API_PREFIX}/documentos", tags=["documentos"])
+app.include_router(tickets.router, prefix=f"{API_PREFIX}/tickets", tags=["tickets"])
+app.include_router(lixeira.router, prefix=f"{API_PREFIX}/lixeira", tags=["lixeira"])
 
 # Servir o frontend (SPA) estaticamente
 import os

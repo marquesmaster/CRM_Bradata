@@ -29,10 +29,17 @@ class CnpjWsError(Exception):
     reraise=True,
 )
 def _fetch(cnpj: str) -> dict | None:
-    url = f"{settings.cnpj_ws_base_url.rstrip('/')}/{cnpj}"
+    # Com token, usa o endpoint comercial (paid, 5 req/s, dados completos);
+    # sem token, fallback para o público (3 req/min).
+    if settings.cnpj_ws_token:
+        base = "https://comercial.cnpj.ws/cnpj"
+    else:
+        base = settings.cnpj_ws_base_url.rstrip("/")
+    url = f"{base}/{cnpj}"
     headers = {"Accept": "application/json"}
     if settings.cnpj_ws_token:
-        headers["Authorization"] = f"Bearer {settings.cnpj_ws_token}"
+        # CNPJ.WS comercial: header oficial é x_api_token (também aceita ?token=...)
+        headers["x_api_token"] = settings.cnpj_ws_token
     with httpx.Client(timeout=30, headers=headers) as client:
         r = client.get(url)
     if r.status_code == 404:
@@ -51,7 +58,9 @@ def enrich_empresa_from_cnpjws(empresa: Empresa) -> bool:
         return False
 
     data = _fetch(cnpj)
-    time.sleep(settings.cnpj_ws_request_delay_ms / 1000.0)
+    # Delay menor com token (5 req/s) e padrão sem (3 req/min)
+    delay_ms = 200 if settings.cnpj_ws_token else settings.cnpj_ws_request_delay_ms
+    time.sleep(delay_ms / 1000.0)
     if not data:
         return False
 
@@ -79,6 +88,18 @@ def enrich_empresa_from_cnpjws(empresa: Empresa) -> bool:
     if ddd1 or tel1:
         empresa.telefone = f"{ddd1}{tel1}".strip() or empresa.telefone
     empresa.email = estab.get("email") or empresa.email
+
+    # CNPJ.WS não retorna website. Se temos um email corporativo (não gmail/hotmail/etc),
+    # derivamos o domínio dele pra usar como website (Lusha precisa disso).
+    if not empresa.website and empresa.email and "@" in empresa.email:
+        domain = empresa.email.split("@", 1)[1].strip().lower()
+        if domain and domain not in {
+            "gmail.com", "hotmail.com", "outlook.com", "yahoo.com", "yahoo.com.br",
+            "uol.com.br", "bol.com.br", "terra.com.br", "ig.com.br", "live.com",
+            "icloud.com", "msn.com", "globo.com", "r7.com",
+        }:
+            empresa.website = domain
+            log.info("Empresa %s: website derivado do email -> %s", empresa.cnpj, domain)
 
     atividade_principal = estab.get("atividade_principal") or {}
     empresa.cnae_principal = atividade_principal.get("subclasse") or empresa.cnae_principal

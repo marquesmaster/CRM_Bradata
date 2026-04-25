@@ -50,6 +50,23 @@ class Settings(BaseSettings):
     lusha_max_contatos_por_empresa: int = 3
     lusha_cargos_prioridade: str = "CTO,Chief Technology Officer,Head of IT,Head of Technology,Diretor de Tecnologia,Gerente de TI,IT Manager,CIO,Contract Manager,Gerente de Contratos,Head of Procurement"
 
+    # SMTP (Gmail / Google Workspace) — fallback global se user não conectou Google
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_name: str = "Bradata"
+    smtp_use_tls: bool = True
+    smtp_reply_to: str = ""
+
+    # Google Workspace OAuth (envio de e-mail como o próprio user via Gmail API)
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
+    # Chave Fernet pra criptografar refresh_token no DB. Se vazio, usa secret_key
+    # (gere com: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+    fernet_key: str = ""
+
     @property
     def icp_cnaes_ti_list(self) -> list[str]:
         return [c.strip() for c in self.icp_cnaes_ti.split(",") if c.strip()]

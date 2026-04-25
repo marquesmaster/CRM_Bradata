@@ -40,6 +40,13 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     team: Mapped[str | None] = mapped_column(String(60), index=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # ----- Google Workspace OAuth (envio de e-mail como o próprio user) -----
+    google_email: Mapped[str | None] = mapped_column(String(180))
+    google_access_token: Mapped[str | None] = mapped_column(String(2048))      # criptografado (Fernet)
+    google_refresh_token: Mapped[str | None] = mapped_column(String(2048))     # criptografado (Fernet)
+    google_token_expiry: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    google_connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

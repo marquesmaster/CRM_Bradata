@@ -5,6 +5,9 @@ function LeadDetail({ companyId, onBack }) {
   const [loadingC, setLoadingC] = React.useState(false);
   const [enriching, setEnriching] = React.useState(false);
   const [enrichMsg, setEnrichMsg] = React.useState(null);
+  const [emailFor, setEmailFor] = React.useState(null);   // contato selecionado para envio
+  const [timeline, setTimeline] = React.useState([]);
+  const [loadingTl, setLoadingTl] = React.useState(false);
 
   const loadContatos = React.useCallback(() => {
     if (!c?.id) return;
@@ -14,6 +17,15 @@ function LeadDetail({ companyId, onBack }) {
       .catch(() => setLoadingC(false));
   }, [c?.id]);
   React.useEffect(loadContatos, [loadContatos]);
+
+  const loadTimeline = React.useCallback(() => {
+    if (!c?.id) return;
+    setLoadingTl(true);
+    window.API.api(`/empresas/${c.id}/timeline?limit=80`)
+      .then(items => { setTimeline(items || []); setLoadingTl(false); })
+      .catch(() => setLoadingTl(false));
+  }, [c?.id]);
+  React.useEffect(loadTimeline, [loadTimeline]);
 
   if (!c) {
     return (
@@ -52,6 +64,26 @@ function LeadDetail({ companyId, onBack }) {
     }
   };
 
+  const enriquecerCnpj = async () => {
+    setEnriching(true);
+    setEnrichMsg(null);
+    try {
+      const r = await window.API.api(`/empresas/${c.id}/enriquecer`, { method: 'POST' });
+      if (r.website || r.email) {
+        setEnrichMsg({ tone: 'success', text: `CNPJ.WS: dados básicos preenchidos. Website: ${r.website || '—'}` });
+        await window.API.refresh(); // recarrega DATA pra mostrar website
+      } else {
+        setEnrichMsg({ tone: 'warn', text: 'CNPJ.WS retornou sem website nem email — empresa pode não ter cadastro ativo.' });
+      }
+    } catch (e) {
+      setEnrichMsg({ tone: 'danger', text: e.message });
+    } finally {
+      setEnriching(false);
+    }
+  };
+
+  const semDominio = !c.website;
+
   return (
     <>
       <div className="page-head">
@@ -71,12 +103,33 @@ function LeadDetail({ companyId, onBack }) {
           </div>
         </div>
         <div className="actions">
-          <button className="btn btn-ghost btn-sm" onClick={enriquecerLusha} disabled={enriching}>
+          {semDominio && (
+            <button className="btn btn-ghost btn-sm" onClick={enriquecerCnpj} disabled={enriching}>
+              <I.refresh size={12}/>{enriching ? 'Buscando…' : 'Buscar dados na Receita (CNPJ.WS)'}
+            </button>
+          )}
+          <button className="btn btn-ghost btn-sm" onClick={enriquecerLusha} disabled={enriching || semDominio} title={semDominio ? 'Enriqueça o CNPJ primeiro pra ter o domínio' : ''}>
             <I.phone size={12}/>{enriching ? 'Buscando…' : 'Enriquecer contatos (Lusha)'}
           </button>
           <button className="btn btn-accent btn-sm"><I.plus size={12}/>Nova oportunidade</button>
         </div>
       </div>
+
+      {semDominio && !enrichMsg && (
+        <div style={{
+          padding:'12px 16px', marginBottom:'var(--gap)', borderRadius:10, fontSize:13,
+          background:'hsl(var(--warning-soft))', color:'hsl(var(--warning))',
+          border:'1px solid hsl(var(--warning) / .3)', display:'flex', gap:10, alignItems:'center'
+        }}>
+          <I.sparkle size={14}/>
+          <div style={{flex:1}}>
+            Esta empresa veio do PNCP sem website/email. <strong>Enriqueça com a Receita Federal (CNPJ.WS)</strong> primeiro — depois a Lusha consegue achar contatos.
+          </div>
+          <button className="btn btn-xs btn-accent" onClick={enriquecerCnpj} disabled={enriching}>
+            Enriquecer agora
+          </button>
+        </div>
+      )}
 
       {enrichMsg && (
         <div style={{
@@ -148,7 +201,8 @@ function LeadDetail({ companyId, onBack }) {
                   </div>
                   <div className="row" style={{gap:4}}>
                     {p.linkedin_url && <a href={p.linkedin_url} target="_blank" rel="noreferrer" className="icon-btn" title="LinkedIn"><I.linkedin size={14}/></a>}
-                    {p.email && <a href={`mailto:${p.email}`} className="icon-btn" title="E-mail"><I.mail size={14}/></a>}
+                    {p.email && <button className="icon-btn" title="Enviar e-mail (SMTP)" onClick={() => setEmailFor(p)}><I.mail size={14}/></button>}
+                    {p.email && <a href={`mailto:${p.email}`} className="icon-btn" title="Abrir cliente de e-mail"><I.send size={14}/></a>}
                     {p.telefone && <a href={`tel:${p.telefone}`} className="icon-btn" title="Ligar"><I.phone size={14}/></a>}
                   </div>
                 </div>
@@ -175,6 +229,14 @@ function LeadDetail({ companyId, onBack }) {
               </table>
             </div>
           )}
+
+          {/* Timeline 360° */}
+          <TimelinePanel
+            items={timeline}
+            loading={loadingTl}
+            onReload={loadTimeline}
+            empresaId={c.id}
+          />
         </div>
 
         <div style={{display:'flex', flexDirection:'column', gap:'var(--gap)'}}>
@@ -206,7 +268,121 @@ function LeadDetail({ companyId, onBack }) {
           )}
         </div>
       </div>
+
+      {emailFor && (
+        <EmailModal contato={emailFor} empresa={c} onClose={() => setEmailFor(null)} onSent={() => { setEmailFor(null); loadContatos(); }}/>
+      )}
     </>
+  );
+}
+
+function EmailModal({ contato, empresa, onClose, onSent }) {
+  const [templates, setTemplates] = React.useState([]);
+  const [tplId, setTplId] = React.useState('');
+  const [assunto, setAssunto] = React.useState('');
+  const [corpo, setCorpo] = React.useState('');
+  const [html, setHtml] = React.useState(false);
+  const [sending, setSending] = React.useState(false);
+  const [msg, setMsg] = React.useState(null);
+  const [preview, setPreview] = React.useState(null);
+
+  React.useEffect(() => {
+    window.API.api('/automacoes?kind=template_email&ativo=true')
+      .then(setTemplates).catch(()=>{});
+  }, []);
+
+  const applyTemplate = (id) => {
+    setTplId(id);
+    const t = templates.find(x => String(x.id) === String(id));
+    if (t) { setAssunto(t.assunto || ''); setCorpo(t.corpo || ''); }
+  };
+
+  const doPreview = async () => {
+    setMsg(null);
+    try {
+      const r = await window.API.api(`/contatos/${contato.id}/preview-email`, {
+        method: 'POST',
+        body: JSON.stringify({
+          automacao_id: tplId ? Number(tplId) : null,
+          assunto, corpo,
+        }),
+      });
+      setPreview(r);
+    } catch (e) { setMsg({ tone:'danger', text: e.message }); }
+  };
+
+  const doSend = async () => {
+    setSending(true); setMsg(null);
+    try {
+      const r = await window.API.api(`/contatos/${contato.id}/enviar-email`, {
+        method: 'POST',
+        body: JSON.stringify({
+          automacao_id: tplId ? Number(tplId) : null,
+          assunto, corpo, html,
+        }),
+      });
+      setMsg({ tone:'success', text:`Enviado para ${r.para}` });
+      setTimeout(onSent, 800);
+    } catch (e) {
+      setMsg({ tone:'danger', text: e.message || 'Falha no envio' });
+    } finally { setSending(false); }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{maxWidth:680}}>
+        <div className="modal-head">
+          <div>
+            <div className="card-title">Enviar e-mail</div>
+            <div className="muted" style={{fontSize:12}}>Para: <strong>{contato.nome}</strong> &lt;{contato.email}&gt; · {empresa?.name}</div>
+          </div>
+          <button className="icon-btn" onClick={onClose}><I.x size={16}/></button>
+        </div>
+        <div className="modal-body" style={{display:'flex', flexDirection:'column', gap:12}}>
+          <div>
+            <label className="card-section-title">Template (opcional)</label>
+            <select className="input" value={tplId} onChange={e => applyTemplate(e.target.value)}>
+              <option value="">— sem template —</option>
+              {templates.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="card-section-title">Assunto</label>
+            <input className="input" value={assunto} onChange={e=>setAssunto(e.target.value)} placeholder="Olá {{nome}}, ..."/>
+          </div>
+          <div>
+            <label className="card-section-title">Corpo · use {`{{nome}}`}, {`{{empresa}}`}, {`{{cargo}}`}, {`{{remetente}}`}</label>
+            <textarea className="input" rows={10} value={corpo} onChange={e=>setCorpo(e.target.value)} placeholder="Oi {{nome}}, vi que a {{empresa}} ..."/>
+          </div>
+          <label className="row" style={{gap:6, fontSize:12}}>
+            <input type="checkbox" checked={html} onChange={e=>setHtml(e.target.checked)}/> corpo é HTML
+          </label>
+          {preview && (
+            <div className="card" style={{padding:12, background:'hsl(var(--bg-soft))'}}>
+              <div className="card-section-title">Preview renderizado</div>
+              <div style={{fontWeight:700, fontSize:13}}>{preview.assunto}</div>
+              <pre style={{whiteSpace:'pre-wrap', fontSize:12, marginTop:6}}>{preview.corpo}</pre>
+            </div>
+          )}
+          {msg && (
+            <div style={{
+              padding:'10px 12px', borderRadius:8, fontSize:12.5,
+              background: msg.tone==='success'?'hsl(var(--success-soft))':'hsl(var(--danger-soft))',
+              color: msg.tone==='success'?'hsl(var(--success))':'hsl(var(--danger))',
+            }}>{msg.text}</div>
+          )}
+        </div>
+        <div className="modal-foot" style={{display:'flex', justifyContent:'space-between'}}>
+          <button className="btn btn-sm btn-ghost" onClick={doPreview} disabled={sending || !corpo}>Preview</button>
+          <div className="row" style={{gap:8}}>
+            <button className="btn btn-sm btn-ghost" onClick={onClose}>Cancelar</button>
+            <button className="btn btn-sm btn-accent" onClick={doSend} disabled={sending || !corpo}>
+              <I.send size={12}/>{sending ? 'Enviando…' : 'Enviar'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -221,4 +397,198 @@ function Info({ label, value, hot }) {
   );
 }
 
+function TimelinePanel({ items, loading, onReload, empresaId }) {
+  const [draft, setDraft] = React.useState('');
+  const [saving, setSaving] = React.useState(false);
+  const [filter, setFilter] = React.useState('all');  // all | atividade | nota | historico
+
+  const addNota = async () => {
+    const txt = draft.trim();
+    if (!txt) return;
+    setSaving(true);
+    try {
+      await window.API.api('/notas', {
+        method: 'POST',
+        body: JSON.stringify({ conteudo: txt, empresa_id: empresaId }),
+      });
+      setDraft('');
+      onReload();
+    } catch (e) { alert(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const filtered = items.filter(ev => filter === 'all' || ev.kind === filter);
+  const counts = items.reduce((acc, ev) => { acc[ev.kind] = (acc[ev.kind] || 0) + 1; return acc; }, {});
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <div>
+          <div className="card-title">Timeline 360°</div>
+          <div className="card-sub">Tudo que aconteceu — atividades, notas, oportunidades</div>
+        </div>
+        <button className="btn btn-xs btn-ghost" onClick={onReload} title="Recarregar"><I.refresh size={10}/></button>
+      </div>
+
+      {/* Caixa de nota inline */}
+      <div style={{padding:'14px 24px', borderBottom:'1px solid hsl(var(--border))'}}>
+        <div className="row" style={{gap:8, alignItems:'flex-start'}}>
+          <div style={{
+            width:32, height:32, borderRadius:'50%',
+            background:'hsl(var(--warning) / .15)', color:'hsl(var(--warning))',
+            display:'grid', placeItems:'center', flex:'0 0 auto',
+          }}><I.doc size={14}/></div>
+          <div style={{flex:1, minWidth:0}}>
+            <textarea
+              className="input"
+              placeholder="Adicionar uma nota… (Ctrl+Enter envia)"
+              rows={2}
+              value={draft}
+              onChange={e=>setDraft(e.target.value)}
+              onKeyDown={e=>{ if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); addNota(); } }}
+              style={{resize:'vertical', fontSize:13, fontFamily:'inherit'}}
+            />
+            <div className="row-between" style={{marginTop:6}}>
+              <span className="muted" style={{fontSize:11}}>Visível pra todo o time</span>
+              <button className="btn btn-xs btn-accent" onClick={addNota} disabled={saving || !draft.trim()}>
+                {saving ? 'Salvando…' : 'Adicionar nota'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Filtros */}
+      {items.length > 0 && (
+        <div style={{padding:'10px 24px', borderBottom:'1px solid hsl(var(--border))'}}>
+          <div className="segment-ctrl" style={{flexWrap:'wrap', gap:4}}>
+            <button className={filter==='all'?'active':''} onClick={()=>setFilter('all')}>
+              Todos <span style={{opacity:.6, marginLeft:4}}>{items.length}</span>
+            </button>
+            {counts.atividade > 0 && <button className={filter==='atividade'?'active':''} onClick={()=>setFilter('atividade')}>Atividades {counts.atividade}</button>}
+            {counts.nota > 0 && <button className={filter==='nota'?'active':''} onClick={()=>setFilter('nota')}>Notas {counts.nota}</button>}
+            {counts.historico > 0 && <button className={filter==='historico'?'active':''} onClick={()=>setFilter('historico')}>Eventos {counts.historico}</button>}
+          </div>
+        </div>
+      )}
+
+      <div style={{padding:0}}>
+        {loading && <div style={{padding:20, textAlign:'center'}} className="muted">Carregando…</div>}
+        {!loading && filtered.length === 0 && (
+          <div style={{padding:24, textAlign:'center'}} className="muted">Nenhum evento ainda. Comece adicionando uma nota acima.</div>
+        )}
+        {!loading && filtered.map((ev, i) => <TimelineRow key={`${ev.kind}-${ev.id}-${i}`} ev={ev}/>)}
+      </div>
+    </div>
+  );
+}
+
+function TimelineRow({ ev }) {
+  const { fmt } = window.DATA;
+  const ts = new Date(ev.ts);
+  const dateStr = ts.toLocaleString('pt-BR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+
+  let icon, color, title, body;
+  if (ev.kind === 'atividade') {
+    const d = ev.data;
+    const tipoIcon = { ligacao:'phone', email:'mail', reuniao:'users', whatsapp:'phone', visita:'building', linkedin:'linkedin', tarefa:'check', outro:'sparkle' };
+    icon = I[tipoIcon[d.tipo] || 'check'];
+    color = d.status === 'concluida' ? 'hsl(var(--success))' :
+            d.prioridade === 'alta' || d.prioridade === 'urgente' ? 'hsl(var(--danger))' :
+            'hsl(var(--info))';
+    title = d.titulo;
+    body = (
+      <>
+        <span className="chip" style={{fontSize:10, padding:'1px 5px'}}>{d.tipo}</span>
+        <span className="chip" style={{fontSize:10, padding:'1px 5px',
+          background: d.status === 'concluida' ? 'hsl(var(--success-soft))' : 'hsl(var(--surface-2))',
+          color: d.status === 'concluida' ? 'hsl(var(--success))' : 'inherit'}}>{d.status}</span>
+        {d.descricao && <span className="muted" style={{fontSize:11.5}}>{d.descricao.slice(0, 120)}</span>}
+      </>
+    );
+  } else if (ev.kind === 'nota') {
+    const d = ev.data;
+    icon = I.doc;
+    color = 'hsl(var(--warning))';
+    title = 'Nota';
+    body = (
+      <span style={{fontSize:12.5, whiteSpace:'pre-wrap', lineHeight:1.5}}>
+        {(d.conteudo || d.texto || '').slice(0, 400)}
+      </span>
+    );
+  } else if (ev.kind === 'historico') {
+    const d = ev.data;
+    icon = d.acao.startsWith('fechou_ganha') ? I.check :
+           d.acao.startsWith('fechou_perdida') ? I.x :
+           d.acao.includes('estagio') ? I.kanban : I.sparkle;
+    color = d.acao.includes('ganha') ? 'hsl(var(--success))' :
+            d.acao.includes('perdida') || d.acao.includes('excluiu') ? 'hsl(var(--danger))' :
+            'hsl(var(--b-accent))';
+    title = formatHistoricoAcao(d.acao, d.entity_type);
+    const changes = d.changes || {};
+    const parts = [];
+    if (changes.titulo) parts.push(`"${changes.titulo}"`);
+    if (changes.valor || changes.valor_estimado) parts.push(fmt.brlK(changes.valor || changes.valor_estimado));
+    if (changes.motivo) parts.push(`motivo: ${changes.motivo}`);
+    if (changes.de_estagio_id != null && changes.para_estagio_id != null) {
+      const stages = window.DATA.STAGES;
+      const de = stages.find(s => String(s.id) === String(changes.de_estagio_id))?.label || changes.de_estagio_id;
+      const para = stages.find(s => String(s.id) === String(changes.para_estagio_id))?.label || changes.para_estagio_id;
+      parts.push(`${de} → ${para}`);
+    }
+    if (changes.campos) parts.push(changes.campos.join(', '));
+    body = (
+      <>
+        {d.user_nome && <span className="muted" style={{fontSize:11.5}}>{d.user_nome}</span>}
+        {parts.length > 0 && <span className="mono" style={{fontSize:11.5}}>{parts.join(' · ')}</span>}
+      </>
+    );
+  } else {
+    icon = I.sparkle; color = 'hsl(var(--fg-muted))'; title = ev.kind; body = null;
+  }
+
+  return (
+    <div style={{display:'grid', gridTemplateColumns:'32px 1fr auto', gap:12, padding:'14px 24px', borderBottom:'1px solid hsl(var(--border))'}}>
+      <div style={{
+        width:32, height:32, borderRadius:'50%', background:`${color}22`, color,
+        display:'grid', placeItems:'center', flex:'0 0 auto',
+      }}>
+        {React.createElement(icon, { size: 14 })}
+      </div>
+      <div style={{minWidth:0}}>
+        <div style={{fontSize:13, fontWeight:600, marginBottom:3}}>{title}</div>
+        <div className="row" style={{gap:8, flexWrap:'wrap', alignItems:'center'}}>{body}</div>
+      </div>
+      <div className="muted" style={{fontSize:11, textAlign:'right', whiteSpace:'nowrap'}}>{dateStr}</div>
+    </div>
+  );
+}
+
+function formatHistoricoAcao(acao, entity_type) {
+  const map = {
+    'criou': 'Oportunidade criada',
+    'mudou_estagio': 'Mudou de estágio',
+    'reatribuiu': 'Reatribuída',
+    'atualizou': 'Editada',
+    'fechou_ganha': '🎉 Fechada como GANHA',
+    'fechou_perdida': 'Fechada como perdida',
+    'excluiu': 'Excluída',
+    'status_concluida': 'Atividade concluída',
+    'status_cancelada': 'Atividade cancelada',
+    'status_em_andamento': 'Em andamento',
+    'status_pendente': 'Rependente',
+    'status_enviada': 'Proposta enviada',
+    'status_aceita': '✓ Proposta aceita',
+    'status_rejeitada': 'Proposta rejeitada',
+    'status_em_analise': 'Em análise',
+    'status_expirada': 'Expirada',
+  };
+  const t = entity_type === 'oportunidade' ? '' :
+            entity_type === 'proposta' ? 'Proposta: ' :
+            entity_type === 'atividade' ? 'Atividade: ' : '';
+  return t + (map[acao] || acao);
+}
+
 window.LeadDetail = LeadDetail;
+window.EmailModal = EmailModal;
+window.TimelinePanel = TimelinePanel;

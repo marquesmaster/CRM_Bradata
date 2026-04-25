@@ -5,14 +5,20 @@ const NAV = [
   { id:'pncp',        label:'Descoberta PNCP', ico:'radar', badge:'novo' },
   { id:'contratos',   label:'Contratos',    ico:'doc' },
   { id:'accounts',    label:'Fornecedores', ico:'building' },
+  { id:'contatos',    label:'Contatos',     ico:'user' },
   { id:'prospeccao',  label:'Prospecção',   ico:'target' },
   { id:'deals',       label:'Deals',        ico:'money' },
   { id:'pipeline',    label:'Pipeline',     ico:'kanban' },
   { id:'propostas',   label:'Propostas',    ico:'doc' },
   { id:'activities',  label:'Atividades',   ico:'check' },
+  { id:'tickets',     label:'Tickets',      ico:'help' },
   { id:'agenda',      label:'Agenda',       ico:'calendar' },
   { id:'reports',     label:'Relatórios',   ico:'chart' },
+  { id:'chat',        label:'Chat interno', ico:'chat' },
   { id:'automacoes',  label:'Automações',   ico:'zap',      section:'admin' },
+  { id:'documentos',  label:'Documentos',   ico:'doc',      section:'admin' },
+  { id:'historicoGlobal', label:'Histórico', ico:'clock',    section:'admin' },
+  { id:'lixeira',     label:'Lixeira',      ico:'x',        section:'admin' },
   { id:'users',       label:'Usuários',     ico:'users',    section:'admin' },
   { id:'settings',    label:'Configurações',ico:'settings', section:'admin' },
 ];
@@ -78,6 +84,17 @@ function App({ onLogout }) {
     return () => { window.__onDataRefresh = null; };
   }, []);
 
+  // Polling leve de unread do chat (10s) — alimenta badge no nav
+  const [chatUnread, setChatUnread] = React.useState(0);
+  React.useEffect(() => {
+    const refresh = () => window.API.api('/chat/channels')
+      .then(chs => setChatUnread((chs || []).reduce((s,c) => s + (c.unread || 0), 0)))
+      .catch(() => {});
+    refresh();
+    const t = setInterval(refresh, 10000);
+    return () => clearInterval(t);
+  }, [route]);
+
   // Roteador simples: window.__nav(route, arg) ou window.__nav(route, {param: value})
   window.__nav = (r, arg) => {
     setRoute(r);
@@ -106,6 +123,7 @@ function App({ onLogout }) {
       case 'contratos':         return <Contratos/>;
       case 'contrato':          return <ContratoDetail contratoId={params.contratoId} onBack={()=>setRoute('contratos')}/>;
       case 'accounts':          return <Accounts/>;
+      case 'contatos':          return <Contatos/>;
       case 'prospeccao':        return <Prospeccao/>;
       case 'prospeccaoDetail':  return <ProspeccaoDetail leadId={params.leadId} onBack={()=>setRoute('prospeccao')}/>;
       case 'deals':             return <Deals/>;
@@ -113,14 +131,19 @@ function App({ onLogout }) {
       case 'propostas':         return <Propostas dealId={params.dealId}/>;
       case 'proposta':          return <PropostaDetail propostaId={params.propostaId} onBack={()=>setRoute('propostas')}/>;
       case 'activities':        return <Activities/>;
+      case 'tickets':           return <Tickets/>;
       case 'agenda':            return <Agenda/>;
       case 'reports':           return <Reports/>;
+      case 'chat':              return <Chat/>;
       case 'automacoes':        return <Automacoes/>;
       case 'users':             return <Users/>;
       case 'profile':           return <Profile/>;
       case 'settings':          return <Settings/>;
       case 'lead':              return <LeadDetail companyId={params.companyId} onBack={()=>setRoute('accounts')}/>;
       case 'historico':         return <Historico cnpjOrId={params.cnpjOrId} onBack={()=>setRoute('accounts')}/>;
+      case 'historicoGlobal':   return <HistoricoGlobal/>;
+      case 'documentos':        return <Documentos/>;
+      case 'lixeira':           return <Lixeira/>;
       default:                  return <NotFound onHome={()=>setRoute('dashboard')}/>;
     }
   };
@@ -135,6 +158,7 @@ function App({ onLogout }) {
   : route === 'prospeccaoDetail' ? 'Detalhe do lead'
   : route === 'proposta' ? 'Detalhe da proposta'
   : route === 'historico' ? 'Histórico 360°'
+  : route === 'historicoGlobal' ? 'Histórico global (admin)'
   : route === 'profile' ? 'Meu perfil'
   : (current?.label || 'Bradata CRM');
 
@@ -160,7 +184,10 @@ function App({ onLogout }) {
               {React.createElement(I[n.ico] || I.dashboard, { size: 16 })}
               {!collapsed && <>
                 <span style={{flex:1}}>{n.label}</span>
-                {n.badge && <span className="chip primary" style={{fontSize:9, padding:'1px 6px'}}>{n.badge}</span>}
+                {n.id === 'chat' && chatUnread > 0 && (
+                  <span className="chip" style={{background:'hsl(var(--b-accent))', color:'white', fontSize:9.5, padding:'2px 7px', minWidth:18, justifyContent:'center'}}>{chatUnread}</span>
+                )}
+                {n.badge && n.id !== 'chat' && <span className="chip primary" style={{fontSize:9, padding:'1px 6px'}}>{n.badge}</span>}
               </>}
             </button>
           ))}
@@ -198,10 +225,7 @@ function App({ onLogout }) {
               <span style={{width:18, height:18, borderRadius:'50%', background:'linear-gradient(135deg, hsl(var(--b-accent)), hsl(var(--b-accent-light)))', color:'white', display:'grid', placeItems:'center'}}><I.sparkle size={11}/></span>
               Bradata AI
             </button>
-            <button className="icon-btn" title="Notificações" style={{position:'relative'}}>
-              <I.bell size={15}/>
-              <span style={{position:'absolute', top:6, right:6, width:7, height:7, borderRadius:'50%', background:'hsl(var(--danger))'}}/>
-            </button>
+            <NotificationBell/>
             <button className="icon-btn" title="Recarregar dados" onClick={reload}><I.refresh size={15}/></button>
             <button className="icon-btn" title="Sair" onClick={onLogout} style={{color:'hsl(var(--danger))'}}>
               <I.close size={15}/>
@@ -215,6 +239,157 @@ function App({ onLogout }) {
       <AIChat externalOpen={aiOpen} onClose={()=>setAiOpen(false)}/>
     </div>
   );
+}
+
+function NotificationBell() {
+  const [items, setItems] = React.useState([]);
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+
+  const load = React.useCallback(() => {
+    window.API.api('/notifications?limit=20')
+      .then(setItems).catch(()=>{});
+  }, []);
+
+  React.useEffect(() => {
+    load();
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  // Fecha clicando fora
+  React.useEffect(() => {
+    if (!open) return;
+    const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [open]);
+
+  const unread = items.filter(n => !n.lida).length;
+
+  const markRead = async (n) => {
+    try {
+      await window.API.api(`/notifications/${n.id}/read`, { method:'POST' });
+      setItems(prev => prev.map(x => x.id === n.id ? {...x, lida:true} : x));
+    } catch {}
+  };
+
+  const markAll = async () => {
+    try {
+      await window.API.api('/notifications/read-all', { method:'POST' });
+      setItems(prev => prev.map(x => ({...x, lida:true})));
+    } catch {}
+  };
+
+  const handleClick = (n) => {
+    if (!n.lida) markRead(n);
+    if (n.link) {
+      // Suporte a deeplinks: lead:123 / deal:45 / proposta:12 / atividade:9 / chat:7
+      const m = n.link.match(/^(\w+):(\d+)$/);
+      if (m) {
+        const [, kind, id] = m;
+        const route = { lead: 'lead', deal: 'deals', proposta: 'proposta', atividade: 'activities', chat: 'chat' }[kind];
+        if (route) { window.__nav(route, id); setOpen(false); return; }
+      }
+    }
+  };
+
+  const kindIcon = {
+    pncp_match: I.radar, deal_moved: I.kanban, mention: I.user,
+    sla_risk: I.fire, ai_summary: I.sparkle, sistema: I.bell,
+  };
+  const kindColor = {
+    pncp_match: 'hsl(var(--b-accent))', deal_moved: 'hsl(var(--info))',
+    mention: 'hsl(var(--success))', sla_risk: 'hsl(var(--danger))',
+    ai_summary: 'hsl(var(--warning))', sistema: 'hsl(var(--fg-muted))',
+  };
+
+  return (
+    <div ref={ref} style={{position:'relative'}}>
+      <button className="icon-btn" title={`${unread} novas`} onClick={()=>setOpen(!open)} style={{position:'relative'}}>
+        <I.bell size={15}/>
+        {unread > 0 && (
+          <span style={{
+            position:'absolute', top:2, right:2,
+            minWidth:14, height:14, padding:'0 3px', borderRadius:7,
+            background:'hsl(var(--danger))', color:'white',
+            fontSize:9, fontWeight:700,
+            display:'grid', placeItems:'center', lineHeight:1,
+          }}>{unread > 99 ? '99+' : unread}</span>
+        )}
+      </button>
+
+      {open && (
+        <div style={{
+          position:'absolute', top:'calc(100% + 6px)', right:0,
+          width:380, maxHeight:520,
+          background:'hsl(var(--surface))',
+          border:'1px solid hsl(var(--border))',
+          borderRadius:10,
+          boxShadow:'0 18px 36px -10px rgba(0,0,0,.25)',
+          zIndex:100,
+          display:'flex', flexDirection:'column',
+        }}>
+          <div className="row-between" style={{padding:'12px 16px', borderBottom:'1px solid hsl(var(--border))'}}>
+            <strong style={{fontSize:13.5}}>Notificações</strong>
+            {unread > 0 && (
+              <button className="btn btn-xs btn-ghost" onClick={markAll}>
+                <I.check size={10}/>Marcar todas
+              </button>
+            )}
+          </div>
+          <div style={{flex:1, overflowY:'auto'}}>
+            {items.length === 0 && (
+              <div style={{padding:24, textAlign:'center'}} className="muted">
+                <I.bell size={26} style={{opacity:.3, marginBottom:8}}/>
+                <div style={{fontSize:13}}>Você está em dia.</div>
+              </div>
+            )}
+            {items.map(n => {
+              const Icon = kindIcon[n.kind] || I.bell;
+              return (
+                <button key={n.id} onClick={()=>handleClick(n)}
+                  style={{
+                    width:'100%', textAlign:'left', padding:'12px 16px',
+                    background: n.lida ? 'transparent' : 'hsl(var(--b-accent) / .04)',
+                    borderBottom:'1px solid hsl(var(--border))',
+                    border:'none', borderBottom:'1px solid hsl(var(--border))',
+                    cursor:'pointer', display:'grid', gridTemplateColumns:'28px 1fr', gap:10,
+                  }}>
+                  <span style={{
+                    width:28, height:28, borderRadius:'50%',
+                    background: kindColor[n.kind] + '22',
+                    color: kindColor[n.kind],
+                    display:'grid', placeItems:'center',
+                  }}>
+                    <Icon size={13}/>
+                  </span>
+                  <div style={{minWidth:0}}>
+                    <div style={{display:'flex', justifyContent:'space-between', gap:6}}>
+                      <strong style={{fontSize:13, lineHeight:1.3}}>{n.titulo}</strong>
+                      {!n.lida && <span style={{width:6, height:6, borderRadius:'50%', background:'hsl(var(--b-accent))', flex:'0 0 auto', marginTop:5}}/>}
+                    </div>
+                    {n.mensagem && <div className="muted" style={{fontSize:11.5, marginTop:2, overflow:'hidden', textOverflow:'ellipsis', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical'}}>{n.mensagem}</div>}
+                    <div className="muted" style={{fontSize:10.5, marginTop:4}}>{relTimeShort(n.created_at)}</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function relTimeShort(iso) {
+  const d = new Date(iso);
+  const diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return 'agora';
+  if (diff < 3600) return `${Math.floor(diff/60)} min atrás`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}h atrás`;
+  if (diff < 604800) return `${Math.floor(diff/86400)} dias atrás`;
+  return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'short' });
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<Boot/>);

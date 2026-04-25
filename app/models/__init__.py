@@ -5,7 +5,9 @@ from app.models.atividade import (
     TipoAtividade,
 )
 from app.models.automacao import Automacao, AutomacaoKind
+from app.models.chat import ChatChannel, ChatChannelKind, ChatMembership, ChatMessage
 from app.models.contato import Contato
+from app.models.documento import DocumentoGerado, DocumentoTemplate, TemplateKind
 from app.models.empresa import Empresa, EmpresaStatus, OrigemEmpresa
 from app.models.etl_run import EtlRun, EtlRunStatus
 from app.models.historico import Historico
@@ -25,7 +27,15 @@ from app.models.pncp import (
     PncpResultado,
 )
 from app.models.proposta import Proposta, PropostaStatus
+from app.models.ticket import (
+    Ticket,
+    TicketComment,
+    TicketKind,
+    TicketPrioridade,
+    TicketStatus,
+)
 from app.models.user import User, UserRole, UserStatus
+from app.models.verification_code import VerificationCode, VerificationKind
 
 __all__ = [
     "Atividade",
@@ -33,7 +43,14 @@ __all__ = [
     "AtividadeStatus",
     "Automacao",
     "AutomacaoKind",
+    "ChatChannel",
+    "ChatChannelKind",
+    "ChatMembership",
+    "ChatMessage",
     "Contato",
+    "DocumentoGerado",
+    "DocumentoTemplate",
+    "TemplateKind",
     "Empresa",
     "EmpresaStatus",
     "EtlRun",
@@ -55,8 +72,15 @@ __all__ = [
     "PncpResultado",
     "Proposta",
     "PropostaStatus",
+    "Ticket",
+    "TicketComment",
+    "TicketKind",
+    "TicketPrioridade",
+    "TicketStatus",
     "TipoAtividade",
     "User",
     "UserRole",
     "UserStatus",
+    "VerificationCode",
+    "VerificationKind",
 ]
