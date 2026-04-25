@@ -87,11 +87,19 @@ function App({ onLogout }) {
   const [theme, setTheme] = React.useState(() => localStorage.getItem('bradata-theme') || 'light');
   const [collapsed, setCollapsed] = React.useState(false);
   const [aiOpen, setAiOpen] = React.useState(false);
+  // Seções colapsadas: { [sectionName]: true }
+  const [collapsedSections, setCollapsedSections] = React.useState(() => {
+    try { return JSON.parse(localStorage.getItem('bradata-nav-sections') || '{}'); }
+    catch { return {}; }
+  });
   const [, forceUpdate] = React.useReducer(x => x + 1, 0);
 
   React.useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
   React.useEffect(() => { localStorage.setItem('bradata-route', route); }, [route]);
   React.useEffect(() => { localStorage.setItem('bradata-theme', theme); }, [theme]);
+  React.useEffect(() => { localStorage.setItem('bradata-nav-sections', JSON.stringify(collapsedSections)); }, [collapsedSections]);
+
+  const toggleSection = (name) => setCollapsedSections(s => ({...s, [name]: !s[name]}));
 
   React.useEffect(() => {
     window.__onDataRefresh = () => forceUpdate();
@@ -195,19 +203,50 @@ function App({ onLogout }) {
           {NAV_SECTIONS.map((sectionName, sectionIdx) => {
             const items = NAV.filter(n => n.section === sectionName);
             if (items.length === 0) return null;
+            const sectionHidden = !!collapsedSections[sectionName];
+            // Indicadores no header quando colapsado: total de badges + active
+            const hasActiveInside = items.some(n => n.id === route);
+            const badgesInside = items.reduce((s, n) => {
+              if (n.id === 'chat' && chatUnread > 0) return s + chatUnread;
+              return s + (n.badge ? 1 : 0);
+            }, 0);
+
             return (
               <React.Fragment key={sectionName}>
                 {!collapsed && (
-                  <div style={{
-                    padding: sectionIdx === 0 ? '8px 12px 4px' : '14px 12px 4px',
-                    fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.08em',
-                    color: 'hsl(var(--sidebar-muted))', fontWeight: 600,
-                  }}>{sectionName}</div>
+                  <button
+                    onClick={() => toggleSection(sectionName)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: sectionIdx === 0 ? '8px 8px 4px' : '14px 8px 4px',
+                      fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.08em',
+                      color: 'hsl(var(--sidebar-muted))', fontWeight: 600,
+                      background: 'transparent', border: 0, cursor: 'pointer',
+                      width: '100%', textAlign: 'left',
+                    }}
+                    title={sectionHidden ? 'Expandir grupo' : 'Colapsar grupo'}
+                  >
+                    <I.chevron size={9} style={{
+                      transform: sectionHidden ? 'rotate(0deg)' : 'rotate(90deg)',
+                      transition: '.15s',
+                      flex: '0 0 auto',
+                    }}/>
+                    <span style={{flex:1}}>{sectionName}</span>
+                    {hasActiveInside && sectionHidden && (
+                      <span style={{width:6, height:6, borderRadius:'50%', background:'hsl(var(--b-accent))'}} title="Item ativo dentro"/>
+                    )}
+                    {badgesInside > 0 && sectionHidden && (
+                      <span style={{
+                        background:'hsl(var(--b-accent))', color:'white',
+                        fontSize:9.5, padding:'1px 6px', borderRadius:8, fontWeight:700,
+                      }}>{badgesInside > 99 ? '99+' : badgesInside}</span>
+                    )}
+                  </button>
                 )}
                 {collapsed && sectionIdx > 0 && (
                   <div style={{height:1, background:'hsl(0 0% 100% / .08)', margin:'8px 12px'}}/>
                 )}
-                {items.map(n => (
+                {(collapsed || !sectionHidden) && items.map(n => (
                   <button key={n.id}
                     className={`nav-item ${route===n.id?'active':''}`}
                     onClick={()=>window.__nav(n.id)}
