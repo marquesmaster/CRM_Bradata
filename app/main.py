@@ -24,6 +24,7 @@ from app.routers import (
     pncp,
     propostas,
     relatorios,
+    tickets,
     users,
 )
 from app.services.bootstrap import ensure_default_admin, ensure_default_pipeline
@@ -82,6 +83,7 @@ app.include_router(relatorios.router, prefix=f"{API_PREFIX}/relatorios", tags=["
 app.include_router(chat.router, prefix=f"{API_PREFIX}/chat", tags=["chat"])
 app.include_router(historico.router, prefix=f"{API_PREFIX}/historico", tags=["historico"])
 app.include_router(documentos.router, prefix=f"{API_PREFIX}/documentos", tags=["documentos"])
+app.include_router(tickets.router, prefix=f"{API_PREFIX}/tickets", tags=["tickets"])
 
 # Servir o frontend (SPA) estaticamente
 import os

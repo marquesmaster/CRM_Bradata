@@ -11,6 +11,7 @@ const NAV = [
   { id:'pipeline',    label:'Pipeline',     ico:'kanban' },
   { id:'propostas',   label:'Propostas',    ico:'doc' },
   { id:'activities',  label:'Atividades',   ico:'check' },
+  { id:'tickets',     label:'Tickets',      ico:'help' },
   { id:'agenda',      label:'Agenda',       ico:'calendar' },
   { id:'reports',     label:'Relatórios',   ico:'chart' },
   { id:'chat',        label:'Chat interno', ico:'chat' },
@@ -129,6 +130,7 @@ function App({ onLogout }) {
       case 'propostas':         return <Propostas dealId={params.dealId}/>;
       case 'proposta':          return <PropostaDetail propostaId={params.propostaId} onBack={()=>setRoute('propostas')}/>;
       case 'activities':        return <Activities/>;
+      case 'tickets':           return <Tickets/>;
       case 'agenda':            return <Agenda/>;
       case 'reports':           return <Reports/>;
       case 'chat':              return <Chat/>;

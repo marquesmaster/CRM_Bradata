@@ -27,6 +27,13 @@ from app.models.pncp import (
     PncpResultado,
 )
 from app.models.proposta import Proposta, PropostaStatus
+from app.models.ticket import (
+    Ticket,
+    TicketComment,
+    TicketKind,
+    TicketPrioridade,
+    TicketStatus,
+)
 from app.models.user import User, UserRole, UserStatus
 from app.models.verification_code import VerificationCode, VerificationKind
 
@@ -65,6 +72,11 @@ __all__ = [
     "PncpResultado",
     "Proposta",
     "PropostaStatus",
+    "Ticket",
+    "TicketComment",
+    "TicketKind",
+    "TicketPrioridade",
+    "TicketStatus",
     "TipoAtividade",
     "User",
     "UserRole",
