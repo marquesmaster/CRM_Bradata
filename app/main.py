@@ -12,6 +12,7 @@ from app.routers import (
     automacoes,
     chat,
     contatos,
+    documentos,
     empresas,
     etl_runs,
     historico,
@@ -80,6 +81,7 @@ app.include_router(propostas.router, prefix=f"{API_PREFIX}/propostas", tags=["pr
 app.include_router(relatorios.router, prefix=f"{API_PREFIX}/relatorios", tags=["relatorios"])
 app.include_router(chat.router, prefix=f"{API_PREFIX}/chat", tags=["chat"])
 app.include_router(historico.router, prefix=f"{API_PREFIX}/historico", tags=["historico"])
+app.include_router(documentos.router, prefix=f"{API_PREFIX}/documentos", tags=["documentos"])
 
 # Servir o frontend (SPA) estaticamente
 import os

@@ -16,3 +16,5 @@ email-validator==2.2.0
 python-dotenv==1.0.1
 cryptography==43.0.1
 websockets==13.1
+docxtpl==0.17.0
+python-docx==1.1.2

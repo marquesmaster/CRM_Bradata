@@ -7,6 +7,7 @@ from app.models.atividade import (
 from app.models.automacao import Automacao, AutomacaoKind
 from app.models.chat import ChatChannel, ChatChannelKind, ChatMembership, ChatMessage
 from app.models.contato import Contato
+from app.models.documento import DocumentoGerado, DocumentoTemplate, TemplateKind
 from app.models.empresa import Empresa, EmpresaStatus, OrigemEmpresa
 from app.models.etl_run import EtlRun, EtlRunStatus
 from app.models.historico import Historico
@@ -40,6 +41,9 @@ __all__ = [
     "ChatMembership",
     "ChatMessage",
     "Contato",
+    "DocumentoGerado",
+    "DocumentoTemplate",
+    "TemplateKind",
     "Empresa",
     "EmpresaStatus",
     "EtlRun",

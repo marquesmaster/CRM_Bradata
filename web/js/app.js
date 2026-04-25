@@ -15,6 +15,7 @@ const NAV = [
   { id:'reports',     label:'Relatórios',   ico:'chart' },
   { id:'chat',        label:'Chat interno', ico:'chat' },
   { id:'automacoes',  label:'Automações',   ico:'zap',      section:'admin' },
+  { id:'documentos',  label:'Documentos',   ico:'doc',      section:'admin' },
   { id:'historicoGlobal', label:'Histórico', ico:'clock',    section:'admin' },
   { id:'users',       label:'Usuários',     ico:'users',    section:'admin' },
   { id:'settings',    label:'Configurações',ico:'settings', section:'admin' },
@@ -138,6 +139,7 @@ function App({ onLogout }) {
       case 'lead':              return <LeadDetail companyId={params.companyId} onBack={()=>setRoute('accounts')}/>;
       case 'historico':         return <Historico cnpjOrId={params.cnpjOrId} onBack={()=>setRoute('accounts')}/>;
       case 'historicoGlobal':   return <HistoricoGlobal/>;
+      case 'documentos':        return <Documentos/>;
       default:                  return <NotFound onHome={()=>setRoute('dashboard')}/>;
     }
   };
