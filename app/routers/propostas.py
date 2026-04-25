@@ -6,7 +6,9 @@ from app.core.deps import CurrentUser, DBSession
 from app.models.oportunidade import Oportunidade
 from app.models.proposta import Proposta, PropostaStatus
 from app.schemas.proposta import PropostaCreate, PropostaOut, PropostaUpdate
+from app.models.notification import NotificationKind
 from app.services.historico import log_event
+from app.services import notify
 
 router = APIRouter()
 
@@ -68,6 +70,22 @@ def update_proposta(proposta_id: int, payload: PropostaUpdate, db: DBSession, cu
     if new_status and before_status != p.status:
         log_event(db, current.id, "proposta", p.id, f"status_{p.status.value}",
                   {"de": before_status.value, "para": p.status.value, "motivo": getattr(p, "motivo_rejeicao", None)})
+        # Notifica owner do deal quando proposta muda de status
+        from app.models.oportunidade import Oportunidade as _Op
+        op = db.get(_Op, p.oportunidade_id) if p.oportunidade_id else None
+        if op and op.owner_id and op.owner_id != current.id:
+            if p.status == PropostaStatus.aceita:
+                notify.push(db, op.owner_id, NotificationKind.deal_moved,
+                            f"✓ Proposta aceita: {p.titulo}",
+                            f"Deal: {op.titulo}", link=f"deal:{op.id}")
+            elif p.status == PropostaStatus.rejeitada:
+                notify.push(db, op.owner_id, NotificationKind.deal_moved,
+                            f"Proposta rejeitada: {p.titulo}",
+                            f"Motivo: {getattr(p,'motivo_rejeicao',None) or 'sem motivo'}", link=f"deal:{op.id}")
+            elif p.status == PropostaStatus.enviada:
+                notify.push(db, op.owner_id, NotificationKind.sistema,
+                            f"Proposta enviada: {p.titulo}",
+                            f"Aguardando resposta do cliente", link=f"deal:{op.id}")
     elif data:
         log_event(db, current.id, "proposta", p.id, "atualizou", {"campos": list(data.keys())})
     db.commit()

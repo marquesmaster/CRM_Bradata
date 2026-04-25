@@ -7,7 +7,9 @@ from app.core.deps import CurrentUser, DBSession
 from app.models.atividade import Atividade, AtividadeStatus, TipoAtividade
 from app.schemas.atividade import AtividadeCreate, AtividadeOut, AtividadeUpdate
 from app.schemas.common import Page
+from app.models.notification import NotificationKind
 from app.services.historico import log_event
+from app.services import notify
 
 router = APIRouter()
 
@@ -71,6 +73,12 @@ def create_atividade(payload: AtividadeCreate, db: DBSession, current: CurrentUs
     log_event(db, current.id, "atividade", at.id, "criou", {
         "tipo": at.tipo.value, "titulo": at.titulo, "due_date": str(at.due_date) if at.due_date else None,
     })
+    # Notifica assignee se for outro user
+    if at.assignee_id and at.assignee_id != current.id:
+        notify.push(db, at.assignee_id, NotificationKind.mention,
+                    f"Atividade atribuída: {at.titulo}",
+                    f"De {current.nome} · {at.tipo.value}",
+                    link=f"atividade:{at.id}")
     db.commit()
     db.refresh(at)
     return at

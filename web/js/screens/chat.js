@@ -1,13 +1,16 @@
+// Chat interno estilo WhatsApp: lista à esquerda com search, mensagens à direita
 function Chat() {
   const [channels, setChannels] = React.useState([]);
   const [activeId, setActiveId] = React.useState(null);
   const [messages, setMessages] = React.useState([]);
   const [users, setUsers] = React.useState([]);
-  const [showNew, setShowNew] = React.useState(false);
   const [draft, setDraft] = React.useState('');
-  const [typingUsers, setTypingUsers] = React.useState({});  // {channel_id: {user_id: timestamp}}
+  const [typingUsers, setTypingUsers] = React.useState({});
+  const [search, setSearch] = React.useState('');
+  const [searchMode, setSearchMode] = React.useState(false);  // true = mostra users pra criar DM
   const wsRef = React.useRef(null);
   const messagesEndRef = React.useRef(null);
+  const inputRef = React.useRef(null);
 
   const me = window.DATA.CURRENT_USER;
   const meId = Number(me.id);
@@ -36,7 +39,6 @@ function Chat() {
         if (evt.type === 'message') {
           if (activeId === evt.channel_id) {
             setMessages(prev => [...prev, evt.message]);
-            // marca lida automaticamente
             window.API.api(`/chat/channels/${evt.channel_id}/read`, { method:'POST' }).catch(()=>{});
           }
           refreshChannels();
@@ -52,12 +54,11 @@ function Chat() {
         }
       } catch {}
     };
-
     const ping = setInterval(() => { if (ws.readyState === 1) ws.send('ping'); }, 25000);
     return () => { clearInterval(ping); ws.close(); };
   }, [activeId, refreshChannels]);
 
-  // Limpeza de typing após 4s
+  // Cleanup typing
   React.useEffect(() => {
     const t = setInterval(() => {
       const cutoff = Date.now() - 4000;
@@ -76,11 +77,16 @@ function Chat() {
   const openChannel = async (id) => {
     setActiveId(id);
     setMessages([]);
+    setSearchMode(false);
+    setSearch('');
     const msgs = await window.API.api(`/chat/channels/${id}/messages?limit=100`);
     setMessages(msgs);
     await window.API.api(`/chat/channels/${id}/read`, { method:'POST' });
     refreshChannels();
-    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior:'smooth' }), 50);
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior:'smooth' });
+      inputRef.current?.focus();
+    }, 50);
   };
 
   React.useEffect(() => {
@@ -94,7 +100,7 @@ function Chat() {
     try {
       await window.API.api(`/chat/channels/${activeId}/messages`, {
         method:'POST',
-        body: JSON.stringify({ conteudo: text }),
+        body: { conteudo: text },
       });
     } catch (e) { setDraft(text); alert(e.message); }
   };
@@ -111,6 +117,31 @@ function Chat() {
     setMessages(prev => prev.map(m => m.id === id ? {...m, conteudo:'(mensagem removida)', deleted_at: new Date().toISOString()} : m));
   };
 
+  const startDM = async (userId) => {
+    try {
+      const ch = await window.API.api('/chat/channels', {
+        method:'POST',
+        body: { kind: 'dm', nome: null, member_ids: [userId] },
+      });
+      refreshChannels();
+      openChannel(ch.id);
+    } catch (e) { alert(e.message); }
+  };
+
+  const startGroup = () => {
+    const nome = prompt('Nome do grupo:');
+    if (!nome) return;
+    const ids = users.filter(u => u.id !== meId).map(u => `${u.id} - ${u.nome}`).join('\n');
+    const sel = prompt(`IDs dos membros (separados por vírgula):\n\n${ids}`);
+    if (!sel) return;
+    const member_ids = sel.split(',').map(s => parseInt(s.trim())).filter(Boolean);
+    if (member_ids.length === 0) return;
+    window.API.api('/chat/channels', {
+      method:'POST',
+      body: { kind: 'group', nome, member_ids },
+    }).then(ch => { refreshChannels(); openChannel(ch.id); }).catch(e => alert(e.message));
+  };
+
   const active = channels.find(c => c.id === activeId);
   const userById = (uid) => users.find(u => u.id === uid);
   const typing = typingUsers[activeId] || {};
@@ -119,256 +150,203 @@ function Chat() {
     .map(uid => userById(Number(uid))?.nome?.split(' ')[0])
     .filter(Boolean);
 
+  // Filtro de busca: busca em conversas existentes E em users (pra criar DM nova)
+  const q = search.trim().toLowerCase();
+  const filteredChannels = !q ? channels : channels.filter(c =>
+    (c.nome || '').toLowerCase().includes(q) ||
+    (c.last_message_preview || '').toLowerCase().includes(q));
+  const matchedUsers = !q ? [] : users
+    .filter(u => u.id !== meId)
+    .filter(u => (u.nome || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q))
+    // Esconde users que já têm DM (vai aparecer no channel)
+    .filter(u => !channels.some(c => c.kind === 'dm' && c.members?.some(m => m.user_id === u.id)));
+
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <h1 className="page-title">Chat interno</h1>
-          <div className="page-sub">Converse com seu time em tempo real · {channels.length} {channels.length===1?'conversa':'conversas'}</div>
+    <div className="wa-shell">
+      {/* Coluna esquerda: lista */}
+      <aside className="wa-sidebar">
+        <div className="wa-sidebar-head">
+          <div className="row" style={{gap:10, alignItems:'center'}}>
+            <UI.Avatar name={me.name || me.email} size={36}/>
+            <div style={{flex:1, minWidth:0}}>
+              <strong style={{fontSize:14}}>Conversas</strong>
+              <div className="muted" style={{fontSize:11.5}}>{channels.length} {channels.length===1?'conversa':'conversas'}</div>
+            </div>
+            <button className="icon-btn" title="Novo grupo" onClick={startGroup}>
+              <I.users size={15}/>
+            </button>
+          </div>
         </div>
-        <div className="actions">
-          <button className="btn btn-accent btn-sm" onClick={()=>setShowNew(true)}>
-            <I.plus size={12}/>Nova conversa
-          </button>
-        </div>
-      </div>
 
-      <div className="card" style={{padding:0, height:'calc(100vh - 180px)', minHeight:520, display:'grid', gridTemplateColumns:'280px 1fr'}}>
-        <aside style={{borderRight:'1px solid hsl(var(--border))', overflowY:'auto'}}>
-          {channels.length === 0 && (
+        <div className="wa-search-wrap">
+          <I.search size={13} className="wa-search-icon"/>
+          <input
+            type="search"
+            placeholder="Buscar ou começar uma nova conversa"
+            value={search}
+            onChange={e=>setSearch(e.target.value)}
+            className="wa-search"
+          />
+        </div>
+
+        <div className="wa-list">
+          {filteredChannels.length === 0 && matchedUsers.length === 0 && (
             <div style={{padding:24, textAlign:'center'}}>
-              <div className="muted" style={{fontSize:13, marginBottom:10}}>Nenhuma conversa ainda.</div>
-              <button className="btn btn-sm btn-accent" onClick={()=>setShowNew(true)}>
-                <I.plus size={12}/>Iniciar conversa
-              </button>
+              {q
+                ? <div className="muted" style={{fontSize:13}}>Nenhum resultado pra "{search}".</div>
+                : <>
+                    <I.chat size={36} style={{opacity:.3, marginBottom:10}}/>
+                    <div className="muted" style={{fontSize:13, marginBottom:4}}>Nenhuma conversa.</div>
+                    <div className="muted" style={{fontSize:11.5}}>Use a busca acima pra encontrar um colega.</div>
+                  </>}
             </div>
           )}
-          {channels.map(ch => (
-            <ChannelRow key={ch.id} channel={ch} active={ch.id===activeId} onClick={()=>openChannel(ch.id)}/>
+
+          {filteredChannels.map(ch => (
+            <ChannelRow key={ch.id} channel={ch} active={ch.id === activeId} onClick={()=>openChannel(ch.id)}/>
           ))}
-        </aside>
 
-        <section style={{display:'flex', flexDirection:'column', minWidth:0}}>
-          {!active && (
-            <div style={{flex:1, display:'grid', placeItems:'center', color:'hsl(var(--fg-muted))'}}>
-              <div style={{textAlign:'center'}}>
-                <I.chat size={42}/>
-                <div style={{marginTop:10, fontSize:14}}>Selecione uma conversa ou inicie uma nova</div>
-              </div>
-            </div>
-          )}
-
-          {active && <>
-            <div style={{padding:'14px 20px', borderBottom:'1px solid hsl(var(--border))', display:'flex', alignItems:'center', gap:12}}>
-              {active.kind === 'group'
-                ? <span className="icon-btn" style={{background:'hsl(var(--b-accent) / .12)', color:'hsl(var(--b-accent))'}}><I.hash size={14}/></span>
-                : <UI.Avatar name={active.nome} size={34}/>}
-              <div style={{flex:1, minWidth:0}}>
-                <div style={{fontSize:14, fontWeight:700}}>{active.nome}</div>
-                <div className="muted" style={{fontSize:11.5}}>
-                  {active.members.length} membros · {active.kind === 'dm' ? 'Mensagem direta' : 'Grupo'}
-                </div>
-              </div>
-            </div>
-
-            <div style={{flex:1, overflowY:'auto', padding:'16px 20px', display:'flex', flexDirection:'column', gap:6}}>
-              {messages.length === 0 && (
-                <div className="muted" style={{textAlign:'center', padding:24, fontSize:13}}>Nenhuma mensagem ainda. Diga oi 👋</div>
-              )}
-              {messages.map((m, i) => {
-                const prev = messages[i-1];
-                const sameAuthor = prev && prev.user_id === m.user_id && (new Date(m.created_at) - new Date(prev.created_at) < 5*60*1000);
-                const mine = m.user_id === meId;
-                const author = userById(m.user_id);
-                return (
-                  <div key={m.id} style={{display:'flex', gap:10, justifyContent: mine?'flex-end':'flex-start', marginTop: sameAuthor?0:8}}>
-                    {!mine && !sameAuthor && <UI.Avatar name={author?.nome || '?'} size={28}/>}
-                    {!mine && sameAuthor && <div style={{width:28}}/>}
-                    <div style={{maxWidth:'70%'}}>
-                      {!sameAuthor && (
-                        <div style={{fontSize:11, color:'hsl(var(--fg-muted))', marginBottom:3, textAlign: mine?'right':'left'}}>
-                          {mine ? 'Você' : (author?.nome || '?')} · {new Date(m.created_at).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}
-                        </div>
-                      )}
-                      <div style={{
-                        padding:'8px 12px', borderRadius:14,
-                        background: mine ? 'hsl(var(--b-accent))' : 'hsl(var(--surface-2))',
-                        color: mine ? 'white' : 'hsl(var(--fg))',
-                        borderTopRightRadius: mine && sameAuthor ? 6 : 14,
-                        borderTopLeftRadius: !mine && sameAuthor ? 6 : 14,
-                        fontSize:13.5, lineHeight:1.45,
-                        opacity: m.deleted_at ? .5 : 1,
-                        fontStyle: m.deleted_at ? 'italic' : 'normal',
-                        whiteSpace:'pre-wrap', wordBreak:'break-word',
-                        position:'relative',
-                      }}>
-                        {m.conteudo}
-                        {mine && !m.deleted_at && (
-                          <button onClick={()=>deleteMsg(m.id)} className="msg-del-btn"
-                            style={{position:'absolute', top:-8, right:-8, width:20, height:20, borderRadius:10, background:'hsl(var(--danger))', color:'white', border:0, cursor:'pointer', opacity:0, transition:'.15s', fontSize:10}}>×</button>
-                        )}
-                      </div>
+          {q && matchedUsers.length > 0 && (
+            <>
+              <div className="wa-section-title">Iniciar nova conversa</div>
+              {matchedUsers.map(u => (
+                <button key={u.id} onClick={()=>startDM(u.id)} className="wa-user-row">
+                  <UI.Avatar name={u.nome} size={42}/>
+                  <div style={{flex:1, minWidth:0}}>
+                    <div style={{fontSize:14, fontWeight:600}}>{u.nome}</div>
+                    <div className="muted" style={{fontSize:12, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                      {u.email}
                     </div>
                   </div>
-                );
-              })}
-              {typingNames.length > 0 && (
-                <div className="muted" style={{fontSize:11.5, padding:'4px 0', fontStyle:'italic'}}>
-                  {typingNames.join(', ')} digitando…
+                  <I.send size={14} style={{color:'hsl(var(--b-accent))'}}/>
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+      </aside>
+
+      {/* Coluna direita: conversa ativa */}
+      <section className="wa-conv">
+        {!active && (
+          <div className="wa-empty">
+            <I.chat size={64} style={{opacity:.2}}/>
+            <h2 style={{margin:'18px 0 6px', fontSize:18}}>Bradata Chat</h2>
+            <p className="muted" style={{fontSize:13.5, maxWidth:380, textAlign:'center'}}>
+              Selecione uma conversa à esquerda ou use a busca para começar uma nova com qualquer membro do time.
+            </p>
+          </div>
+        )}
+
+        {active && <>
+          <header className="wa-conv-head">
+            {active.kind === 'group'
+              ? <span className="wa-group-mark"><I.hash size={16}/></span>
+              : <UI.Avatar name={active.nome} size={42}/>}
+            <div style={{flex:1, minWidth:0}}>
+              <div style={{fontSize:15, fontWeight:600}}>{active.nome}</div>
+              <div className="muted" style={{fontSize:11.5}}>
+                {active.kind === 'dm'
+                  ? (typingNames.length > 0 ? `digitando…` : 'Mensagem direta')
+                  : `${active.members.length} membros${typingNames.length > 0 ? ` · ${typingNames.join(', ')} digitando…` : ''}`}
+              </div>
+            </div>
+          </header>
+
+          <div className="wa-messages">
+            {messages.length === 0 && (
+              <div className="muted" style={{textAlign:'center', padding:'40px 24px', fontSize:13}}>
+                Nenhuma mensagem ainda. Diga oi 👋
+              </div>
+            )}
+            {messages.map((m, i) => {
+              const prev = messages[i-1];
+              const sameAuthor = prev && prev.user_id === m.user_id && (new Date(m.created_at) - new Date(prev.created_at) < 5*60*1000);
+              const mine = m.user_id === meId;
+              const author = userById(m.user_id);
+              return (
+                <div key={m.id} className={`wa-msg-row ${mine?'mine':''} ${sameAuthor?'same':''}`}>
+                  {!mine && !sameAuthor && <UI.Avatar name={author?.nome || '?'} size={28}/>}
+                  {!mine && sameAuthor && <div style={{width:28}}/>}
+                  <div className={`wa-bubble ${mine?'mine':''} ${m.deleted_at?'deleted':''}`}>
+                    {!sameAuthor && active?.kind === 'group' && !mine && (
+                      <div className="wa-author">{author?.nome || '?'}</div>
+                    )}
+                    <div className="wa-conteudo">{m.conteudo}</div>
+                    <div className="wa-time">
+                      {new Date(m.created_at).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}
+                    </div>
+                    {mine && !m.deleted_at && (
+                      <button onClick={()=>deleteMsg(m.id)} className="wa-del">×</button>
+                    )}
+                  </div>
                 </div>
-              )}
-              <div ref={messagesEndRef}/>
-            </div>
+              );
+            })}
+            {typingNames.length > 0 && (
+              <div className="muted" style={{fontSize:11.5, padding:'4px 12px', fontStyle:'italic'}}>
+                {typingNames.join(', ')} digitando…
+              </div>
+            )}
+            <div ref={messagesEndRef}/>
+          </div>
 
-            <div style={{padding:'12px 20px', borderTop:'1px solid hsl(var(--border))', display:'flex', gap:10, alignItems:'flex-end'}}>
-              <textarea
-                className="input"
-                rows={1}
-                value={draft}
-                placeholder="Mensagem… (Enter envia, Shift+Enter quebra linha)"
-                onChange={e => { setDraft(e.target.value); sendTyping(); }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-                }}
-                style={{resize:'none', minHeight:38, maxHeight:120, fontSize:13.5}}
-              />
-              <button className="btn btn-accent btn-sm" onClick={send} disabled={!draft.trim()}>
-                <I.send size={13}/>
-              </button>
-            </div>
-          </>}
-        </section>
-      </div>
-
-      {showNew && (
-        <NewConversationModal users={users.filter(u => u.id !== meId)} onClose={()=>setShowNew(false)}
-          onCreated={(ch) => { setShowNew(false); refreshChannels(); openChannel(ch.id); }}/>
-      )}
-
-      <style>{`.msg-del-btn { opacity: 0; } div:hover > div > .msg-del-btn { opacity: 1; }`}</style>
-    </>
+          <div className="wa-input-bar">
+            <textarea
+              ref={inputRef}
+              rows={1}
+              value={draft}
+              placeholder="Digite uma mensagem"
+              onChange={e=>{ setDraft(e.target.value); sendTyping(); autoResize(e.target); }}
+              onKeyDown={e=>{
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+              }}
+              className="wa-input"
+            />
+            <button className="wa-send-btn" onClick={send} disabled={!draft.trim()} title="Enviar">
+              <I.send size={16}/>
+            </button>
+          </div>
+        </>}
+      </section>
+    </div>
   );
 }
 
 function ChannelRow({ channel, active, onClick }) {
   const last = channel.last_message_at ? new Date(channel.last_message_at) : null;
   return (
-    <button onClick={onClick} style={{
-      width:'100%', textAlign:'left', padding:'12px 14px',
-      background: active ? 'hsl(var(--b-accent) / .08)' : 'transparent',
-      borderLeft: active ? '3px solid hsl(var(--b-accent))' : '3px solid transparent',
-      borderBottom:'1px solid hsl(var(--border))',
-      cursor:'pointer', display:'flex', gap:10, alignItems:'center',
-    }}>
+    <button onClick={onClick} className={`wa-row ${active?'active':''}`}>
       {channel.kind === 'group'
-        ? <span style={{width:34, height:34, borderRadius:8, background:'hsl(var(--b-accent) / .15)', color:'hsl(var(--b-accent))', display:'grid', placeItems:'center', flex:'0 0 auto'}}><I.hash size={14}/></span>
-        : <UI.Avatar name={channel.nome} size={34}/>}
+        ? <span className="wa-group-mark"><I.hash size={16}/></span>
+        : <UI.Avatar name={channel.nome} size={42}/>}
       <div style={{flex:1, minWidth:0}}>
-        <div style={{fontSize:13, fontWeight:600, display:'flex', justifyContent:'space-between', gap:6}}>
-          <span style={{overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{channel.nome}</span>
-          {last && <span className="muted" style={{fontSize:10, fontWeight:400, flex:'0 0 auto'}}>{relTime(last)}</span>}
+        <div className="wa-row-top">
+          <span className="wa-row-name">{channel.nome}</span>
+          {last && <span className="wa-row-time">{relTime(last)}</span>}
         </div>
-        <div className="muted" style={{fontSize:11.5, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', marginTop:1}}>
-          {channel.last_message_preview || 'Sem mensagens'}
+        <div className="wa-row-bottom">
+          <span className="wa-row-preview">{channel.last_message_preview || 'Sem mensagens'}</span>
+          {channel.unread > 0 && <span className="wa-unread">{channel.unread}</span>}
         </div>
       </div>
-      {channel.unread > 0 && (
-        <span className="chip" style={{background:'hsl(var(--b-accent))', color:'white', fontSize:10, padding:'2px 7px', minWidth:20, justifyContent:'center'}}>{channel.unread}</span>
-      )}
     </button>
   );
 }
 
-function NewConversationModal({ users, onClose, onCreated }) {
-  const [kind, setKind] = React.useState('dm');
-  const [nome, setNome] = React.useState('');
-  const [selected, setSelected] = React.useState(new Set());
-  const [filter, setFilter] = React.useState('');
-  const [busy, setBusy] = React.useState(false);
-
-  const toggle = (id) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (kind === 'dm') { next.clear(); next.add(id); }
-      else { next.has(id) ? next.delete(id) : next.add(id); }
-      return next;
-    });
-  };
-
-  const create = async () => {
-    if (selected.size === 0) return;
-    if (kind === 'group' && !nome.trim()) { alert('Dê um nome ao grupo'); return; }
-    setBusy(true);
-    try {
-      const ch = await window.API.api('/chat/channels', {
-        method:'POST',
-        body: JSON.stringify({ kind, nome: kind==='group' ? nome.trim() : null, member_ids: [...selected] }),
-      });
-      onCreated(ch);
-    } catch (e) { alert(e.message); setBusy(false); }
-  };
-
-  const filtered = users.filter(u => !filter || (u.nome||'').toLowerCase().includes(filter.toLowerCase()) || (u.email||'').toLowerCase().includes(filter.toLowerCase()));
-
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:520}}>
-        <div className="modal-head">
-          <div><div className="card-title">Nova conversa</div></div>
-          <button className="icon-btn" onClick={onClose}><I.x size={16}/></button>
-        </div>
-        <div className="modal-body" style={{display:'flex', flexDirection:'column', gap:14}}>
-          <div className="row" style={{gap:8}}>
-            <button className={`btn btn-sm ${kind==='dm'?'btn-accent':'btn-ghost'}`} onClick={()=>{setKind('dm'); setSelected(new Set());}}>
-              <I.user size={12}/>Mensagem direta
-            </button>
-            <button className={`btn btn-sm ${kind==='group'?'btn-accent':'btn-ghost'}`} onClick={()=>{setKind('group'); setSelected(new Set());}}>
-              <I.hash size={12}/>Grupo
-            </button>
-          </div>
-
-          {kind === 'group' && (
-            <div>
-              <label className="card-section-title">Nome do grupo</label>
-              <input className="input" value={nome} onChange={e=>setNome(e.target.value)} placeholder="ex: Time Comercial RJ"/>
-            </div>
-          )}
-
-          <div>
-            <label className="card-section-title">{kind==='dm' ? 'Conversar com' : 'Adicionar membros'}</label>
-            <input className="input" value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Buscar usuário…" style={{marginBottom:8}}/>
-            <div style={{maxHeight:240, overflowY:'auto', border:'1px solid hsl(var(--border))', borderRadius:8}}>
-              {filtered.map(u => (
-                <label key={u.id} style={{display:'flex', alignItems:'center', gap:10, padding:'8px 12px', borderBottom:'1px solid hsl(var(--border))', cursor:'pointer'}}>
-                  <input type="checkbox" checked={selected.has(u.id)} onChange={()=>toggle(u.id)}/>
-                  <UI.Avatar name={u.nome} size={26}/>
-                  <div style={{flex:1, minWidth:0}}>
-                    <div style={{fontSize:13, fontWeight:500}}>{u.nome}</div>
-                    <div className="muted" style={{fontSize:11}}>{u.email}</div>
-                  </div>
-                </label>
-              ))}
-              {filtered.length === 0 && <div className="muted" style={{padding:14, textAlign:'center', fontSize:12}}>Nenhum usuário encontrado</div>}
-            </div>
-          </div>
-        </div>
-        <div className="modal-foot">
-          <button className="btn btn-sm btn-ghost" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-sm btn-accent" onClick={create} disabled={busy || selected.size===0 || (kind==='group' && !nome.trim())}>
-            {busy ? 'Criando…' : 'Criar conversa'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
 }
 
 function relTime(d) {
   const diff = (Date.now() - d.getTime()) / 1000;
   if (diff < 60) return 'agora';
   if (diff < 3600) return `${Math.floor(diff/60)}m`;
-  if (diff < 86400) return `${Math.floor(diff/3600)}h`;
-  if (diff < 604800) return `${Math.floor(diff/86400)}d`;
+  if (diff < 86400) {
+    return d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+  }
+  if (diff < 604800) return d.toLocaleDateString('pt-BR', {weekday:'short'});
   return d.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
 }
 

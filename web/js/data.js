@@ -28,9 +28,13 @@
 
   async function api(path, opts = {}) {
     const token = auth.token();
+    const isJsonBody = opts.body && (
+      typeof opts.body === 'object' ||
+      (typeof opts.body === 'string' && /^\s*[{\[]/.test(opts.body))
+    );
     const headers = {
       'Accept': 'application/json',
-      ...(opts.body && typeof opts.body === 'object' ? { 'Content-Type': 'application/json' } : {}),
+      ...(isJsonBody ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       ...(opts.headers || {}),
     };

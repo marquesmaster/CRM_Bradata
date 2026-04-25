@@ -13,7 +13,9 @@ from app.schemas.oportunidade import (
     OportunidadeOut,
     OportunidadeUpdate,
 )
+from app.models.notification import NotificationKind
 from app.services.historico import log_event
+from app.services import notify
 
 router = APIRouter()
 
@@ -93,9 +95,18 @@ def update_oportunidade(op_id: int, payload: OportunidadeUpdate, db: DBSession, 
     if "estagio_id" in data and before_estagio != op.estagio_id:
         log_event(db, current.id, "oportunidade", op.id, "mudou_estagio",
                   {"de_estagio_id": before_estagio, "para_estagio_id": op.estagio_id})
+        # Notifica owner se diferente do user atual
+        if op.owner_id and op.owner_id != current.id:
+            notify.push(db, op.owner_id, NotificationKind.deal_moved,
+                        f"Deal '{op.titulo}' mudou de estágio",
+                        f"{current.nome} moveu o deal", link=f"deal:{op.id}")
     elif "owner_id" in data and before_owner != op.owner_id:
         log_event(db, current.id, "oportunidade", op.id, "reatribuiu",
                   {"de_owner_id": before_owner, "para_owner_id": op.owner_id})
+        if op.owner_id and op.owner_id != current.id:
+            notify.push(db, op.owner_id, NotificationKind.mention,
+                        f"Deal '{op.titulo}' atribuído a você",
+                        f"{current.nome} atribuiu este deal a você", link=f"deal:{op.id}")
     elif data:
         log_event(db, current.id, "oportunidade", op.id, "atualizou",
                   {"campos": list(data.keys())})
@@ -117,6 +128,19 @@ def fechar_oportunidade(op_id: int, payload: OportunidadeCloseRequest, db: DBSes
     log_event(db, current.id, "oportunidade", op.id,
               "fechou_ganha" if payload.status == OportunidadeStatus.ganha else "fechou_perdida",
               {"motivo": payload.motivo_perda, "valor": op.valor_estimado})
+    # Notifica todos admins + owner
+    from app.models.user import User as _User, UserRole
+    admin_ids = [r[0] for r in db.query(_User.id).filter(_User.role == UserRole.admin, _User.is_active.is_(True)).all()]
+    targets = list({*admin_ids, op.owner_id}) if op.owner_id else admin_ids
+    targets = [t for t in targets if t and t != current.id]
+    if payload.status == OportunidadeStatus.ganha:
+        notify.push_many(db, targets, NotificationKind.deal_moved,
+                         f"🎉 Deal GANHO: {op.titulo}",
+                         f"Por {current.nome} — R$ {op.valor_estimado or 0:,.0f}", link=f"deal:{op.id}")
+    else:
+        notify.push_many(db, targets, NotificationKind.deal_moved,
+                         f"Deal perdido: {op.titulo}",
+                         f"Motivo: {payload.motivo_perda or 'sem motivo registrado'}", link=f"deal:{op.id}")
     db.commit()
     db.refresh(op)
     return op
