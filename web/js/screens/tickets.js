@@ -118,15 +118,7 @@ function Tickets() {
         )}
       </div>
 
-      {total > SIZE && (
-        <div className="row-between" style={{marginTop:14, padding:'0 6px'}}>
-          <span className="muted" style={{fontSize:12}}>{(page-1)*SIZE+1}–{Math.min(page*SIZE,total)} de {total}</span>
-          <div className="row" style={{gap:6}}>
-            <button className="btn btn-xs btn-ghost" disabled={page<=1} onClick={()=>setPage(p=>p-1)}>‹</button>
-            <button className="btn btn-xs btn-ghost" disabled={page*SIZE>=total} onClick={()=>setPage(p=>p+1)}>›</button>
-          </div>
-        </div>
-      )}
+      <Paginator page={page} total={total} size={SIZE} onPage={setPage}/>
 
       {editing && <TicketModal ticket={editing.id ? editing : null} team={team}
         onClose={()=>setEditing(null)} onSaved={()=>{setEditing(null); load();}}/>}
@@ -248,6 +240,8 @@ function TicketModal({ ticket, team, onClose, onSaved }) {
               placeholder="Contexto, passos, links…"/>
           </div>
           {err && <div className="login-error" style={{margin:0}}><I.x size={14}/><span>{err}</span></div>}
+
+          {editing && <EntityHistoryPanel entityType="ticket" entityId={ticket.id} title="Histórico"/>}
 
           {editing && (
             <>

@@ -142,16 +142,7 @@ function Deals() {
         </table>
       </div>
 
-      {total > SIZE && (
-        <div className="row-between" style={{marginTop:14, padding:'0 6px'}}>
-          <span className="muted" style={{fontSize:12}}>{(page-1)*SIZE+1}–{Math.min(page*SIZE,total)} de {total}</span>
-          <div className="row" style={{gap:6}}>
-            <button className="btn btn-xs btn-ghost" disabled={page<=1} onClick={()=>setPage(p=>p-1)}>‹ Anterior</button>
-            <span className="muted" style={{fontSize:12, padding:'0 6px'}}>Pág {page} / {Math.ceil(total/SIZE)}</span>
-            <button className="btn btn-xs btn-ghost" disabled={page*SIZE>=total} onClick={()=>setPage(p=>p+1)}>Próxima ›</button>
-          </div>
-        </div>
-      )}
+      <Paginator page={page} total={total} size={SIZE} onPage={setPage}/>
 
       {editing && <DealModal deal={editing.id ? editing : null} onClose={()=>setEditing(null)} onSaved={onSaved}/>}
       {closing && <CloseDealModal deal={closing} onClose={()=>setClosing(null)} onSaved={onSaved}/>}

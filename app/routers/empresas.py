@@ -192,12 +192,14 @@ def restore_empresa(empresa_id: int, db: DBSession, current: CurrentUser):
 
 
 @router.post("/{empresa_id}/enriquecer", response_model=EmpresaOut)
-def enriquecer_empresa(empresa_id: int, db: DBSession, _: CurrentUser):
+def enriquecer_empresa(empresa_id: int, db: DBSession, current: CurrentUser):
     empresa = db.get(Empresa, empresa_id)
     if not empresa:
         raise HTTPException(status_code=404, detail="Empresa não encontrada")
-    enrich_empresa_from_cnpjws(empresa)
+    ok = enrich_empresa_from_cnpjws(empresa)
     classify_icp(empresa)
+    log_event(db, current.id, "empresa", empresa.id, "enriqueceu_cnpjws",
+              {"sucesso": bool(ok), "website_obtido": empresa.website})
     db.commit()
     db.refresh(empresa)
     return _serialize(db, empresa)
@@ -249,7 +251,7 @@ def enriquecer_pendentes(
 
 
 @router.post("/{empresa_id}/enriquecer-lusha")
-def enriquecer_lusha(empresa_id: int, db: DBSession, _: CurrentUser):
+def enriquecer_lusha(empresa_id: int, db: DBSession, current: CurrentUser):
     """Busca decisores (CTO, Head de TI, etc.) via Lusha. Cache permanente."""
     empresa = db.get(Empresa, empresa_id)
     if not empresa:
@@ -258,6 +260,10 @@ def enriquecer_lusha(empresa_id: int, db: DBSession, _: CurrentUser):
         resumo = lusha_enriquecer(db, empresa)
     except LushaError as e:
         raise HTTPException(status_code=502, detail=str(e))
+    log_event(db, current.id, "empresa", empresa.id, "enriqueceu_lusha",
+              {"novos": resumo.get("novos", 0), "ja_existentes": resumo.get("ja_existentes", 0),
+               "dominio": resumo.get("dominio")})
+    db.commit()
     return resumo
 
 

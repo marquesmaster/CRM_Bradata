@@ -10,6 +10,8 @@ from app.models.oportunidade import Oportunidade, OportunidadeStatus, PipelineEs
 from app.schemas.common import Page
 from app.schemas.lead import LeadConvert, LeadCreate, LeadOut, LeadUpdate
 from app.schemas.oportunidade import OportunidadeOut
+from app.services.historico import log_event
+from app.services.soft_delete import filter_active, restore, soft_delete
 
 router = APIRouter()
 
@@ -25,8 +27,11 @@ def list_leads(
     origem: str | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
+    include_deleted: bool = False,
 ):
     query = db.query(Lead)
+    if not include_deleted:
+        query = filter_active(query, Lead)
     if status_:
         query = query.filter(Lead.status == status_)
     if owner_id:
@@ -58,22 +63,53 @@ def create_lead(payload: LeadCreate, db: DBSession, current: CurrentUser):
     if lead.owner_id is None:
         lead.owner_id = current.id
     db.add(lead)
+    db.flush()
+    log_event(db, current.id, "lead", lead.id, "criou",
+              {"empresa_id": lead.empresa_id, "score": lead.score})
     db.commit()
     db.refresh(lead)
     return lead
 
 
 @router.patch("/{lead_id}", response_model=LeadOut)
-def update_lead(lead_id: int, payload: LeadUpdate, db: DBSession, _: CurrentUser):
+def update_lead(lead_id: int, payload: LeadUpdate, db: DBSession, current: CurrentUser):
     lead = db.get(Lead, lead_id)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
     data = payload.model_dump(exclude_unset=True)
     new_status = data.get("status")
+    before_status = lead.status
     for k, v in data.items():
         setattr(lead, k, v)
     if new_status == LeadStatus.qualificado and lead.qualificado_em is None:
         lead.qualificado_em = datetime.now(timezone.utc)
+    if new_status and before_status != lead.status:
+        log_event(db, current.id, "lead", lead.id, f"status_{lead.status.value}",
+                  {"de": before_status.value, "para": lead.status.value})
+    elif data:
+        log_event(db, current.id, "lead", lead.id, "atualizou", {"campos": list(data.keys())})
+    db.commit()
+    db.refresh(lead)
+    return lead
+
+
+@router.delete("/{lead_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_lead(lead_id: int, db: DBSession, current: CurrentUser):
+    lead = db.get(Lead, lead_id)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+    log_event(db, current.id, "lead", lead.id, "excluiu", None)
+    soft_delete(db, current.id, lead)
+    db.commit()
+
+
+@router.post("/{lead_id}/restore", response_model=LeadOut)
+def restore_lead(lead_id: int, db: DBSession, current: CurrentUser):
+    lead = db.get(Lead, lead_id)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+    restore(lead)
+    log_event(db, current.id, "lead", lead.id, "restaurou", None)
     db.commit()
     db.refresh(lead)
     return lead

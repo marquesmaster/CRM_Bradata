@@ -88,13 +88,7 @@ function Contratos() {
         </table>
       </div>
 
-      {pages > 1 && (
-        <div className="row" style={{gap:8, justifyContent:'center', marginTop:16}}>
-          <button className="btn btn-sm btn-ghost" disabled={page === 1} onClick={()=>setPage(p => Math.max(1, p-1))}>Anterior</button>
-          <span style={{fontSize:12.5, color:'hsl(var(--fg-muted))', alignSelf:'center'}}>Página {page} de {pages}</span>
-          <button className="btn btn-sm btn-ghost" disabled={page >= pages} onClick={()=>setPage(p => Math.min(pages, p+1))}>Próxima</button>
-        </div>
-      )}
+      <Paginator page={page} total={total} size={size} onPage={setPage}/>
     </>
   );
 }

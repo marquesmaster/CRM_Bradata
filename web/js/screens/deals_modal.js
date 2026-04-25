@@ -233,6 +233,8 @@ function DealModal({ deal, onClose, onSaved }) {
           </div>
 
           {err && <div className="login-error" style={{margin:0}}><I.x size={14}/><span>{err}</span></div>}
+
+          {editing && <EntityHistoryPanel entityType="oportunidade" entityId={deal.id} title="Histórico desta oportunidade"/>}
         </div>
 
         <div className="modal-foot">

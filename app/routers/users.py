@@ -10,6 +10,7 @@ from app.models.lead import Lead, LeadStatus
 from app.models.oportunidade import Oportunidade, OportunidadeStatus
 from app.models.user import User, UserStatus
 from app.schemas.user import UserCreate, UserInvite, UserOut, UserStats, UserUpdate
+from app.services.historico import log_event
 
 router = APIRouter()
 
@@ -134,7 +135,7 @@ def list_users(db: DBSession, _: AdminUser):
 
 
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-def create_user(payload: UserCreate, db: DBSession, _: AdminUser):
+def create_user(payload: UserCreate, db: DBSession, current: AdminUser):
     email = payload.email.lower()
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="Email já cadastrado")
@@ -146,22 +147,34 @@ def create_user(payload: UserCreate, db: DBSession, _: AdminUser):
         is_active=payload.is_active,
     )
     db.add(user)
+    db.flush()
+    log_event(db, current.id, "user", user.id, "criou",
+              {"email": user.email, "role": user.role.value})
     db.commit()
     db.refresh(user)
     return user
 
 
 @router.patch("/{user_id}", response_model=UserOut)
-def update_user(user_id: int, payload: UserUpdate, db: DBSession, _: AdminUser):
+def update_user(user_id: int, payload: UserUpdate, db: DBSession, current: AdminUser):
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     data = payload.model_dump(exclude_unset=True)
     senha = data.pop("senha", None)
+    before_role = user.role
+    before_active = user.is_active
     for k, v in data.items():
         setattr(user, k, v)
     if senha:
         user.senha_hash = hash_password(senha)
+        log_event(db, current.id, "user", user.id, "alterou_senha", None)
+    if "role" in data and before_role != user.role:
+        log_event(db, current.id, "user", user.id, "mudou_role",
+                  {"de": before_role.value, "para": user.role.value})
+    if "is_active" in data and before_active != user.is_active:
+        log_event(db, current.id, "user", user.id,
+                  "ativou" if user.is_active else "desativou", None)
     db.commit()
     db.refresh(user)
     return user
@@ -175,4 +188,5 @@ def deactivate_user(user_id: int, db: DBSession, current: AdminUser):
     if user.id == current.id:
         raise HTTPException(status_code=400, detail="Não é possível desativar a si mesmo")
     user.is_active = False
+    log_event(db, current.id, "user", user.id, "desativou", None)
     db.commit()

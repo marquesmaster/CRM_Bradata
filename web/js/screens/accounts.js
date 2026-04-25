@@ -269,35 +269,7 @@ function Accounts() {
         </table>
       </div>
 
-      {/* Paginação */}
-      {totalPages > 1 && (
-        <div className="row" style={{justifyContent:'space-between', marginTop:16, flexWrap:'wrap', gap:12}}>
-          <span className="muted" style={{fontSize:12.5}}>
-            Mostrando {start + 1}–{Math.min(start + ITEMS_PER_PAGE_FORN, filtered.length)} de {filtered.length}
-          </span>
-          <div className="row" style={{gap:6}}>
-            <button className="btn btn-xs btn-ghost" disabled={page === 1} onClick={()=>setPage(p => Math.max(1, p-1))}>
-              <I.chevron size={10} style={{transform:'rotate(180deg)'}}/>
-            </button>
-            {Array.from({length: Math.min(5, totalPages)}, (_, i) => {
-              let n;
-              if (totalPages <= 5) n = i + 1;
-              else if (page <= 3) n = i + 1;
-              else if (page >= totalPages - 2) n = totalPages - 4 + i;
-              else n = page - 2 + i;
-              return (
-                <button key={n}
-                  className={`btn btn-xs ${page === n ? 'btn-accent' : 'btn-ghost'}`}
-                  style={{minWidth:28, padding:0, justifyContent:'center'}}
-                  onClick={()=>setPage(n)}>{n}</button>
-              );
-            })}
-            <button className="btn btn-xs btn-ghost" disabled={page >= totalPages} onClick={()=>setPage(p => Math.min(totalPages, p+1))}>
-              <I.chevron size={10}/>
-            </button>
-          </div>
-        </div>
-      )}
+      <Paginator page={page} total={filtered.length} size={ITEMS_PER_PAGE_FORN} onPage={setPage}/>
     </>
   );
 }
