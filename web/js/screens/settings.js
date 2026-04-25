@@ -106,15 +106,18 @@ function GoogleConnectCard() {
         )}
 
         {connected && (
-          <div className="setting-row" style={{borderBottom:'none', padding:'10px 0'}}>
-            <div>
-              <strong>{status.email}</strong>
-              <div className="muted" style={{fontSize:11.5}}>
-                Conectado em {status.connected_at ? new Date(status.connected_at).toLocaleString('pt-BR') : '—'}
+          <>
+            <div className="setting-row" style={{borderBottom:'none', padding:'10px 0'}}>
+              <div>
+                <strong>{status.email}</strong>
+                <div className="muted" style={{fontSize:11.5}}>
+                  Conectado em {status.connected_at ? new Date(status.connected_at).toLocaleString('pt-BR') : '—'}
+                </div>
               </div>
+              <button className="btn btn-xs btn-ghost" onClick={desconectar} disabled={busy}>Desconectar</button>
             </div>
-            <button className="btn btn-xs btn-ghost" onClick={desconectar} disabled={busy}>Desconectar</button>
-          </div>
+            <SyncRepliesBtn/>
+          </>
         )}
 
         {!connected && configured && (
@@ -130,6 +133,36 @@ function GoogleConnectCard() {
             color: msg.tone==='success'?'hsl(var(--success))':'hsl(var(--danger))',
           }}>{msg.text}</div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function SyncRepliesBtn() {
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState(null);
+  const sync = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const r = await window.API.api('/auth/google/sync-replies', { method: 'POST' });
+      setMsg({ tone:'success', text: `${r.threads_processadas || 0} threads · ${r.novos_recebidos || 0} novas respostas` });
+    } catch (e) {
+      setMsg({ tone:'danger', text: e.message });
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="setting-row" style={{borderBottom:'none', padding:'10px 0'}}>
+      <div>
+        <strong>Sincronizar respostas do Gmail</strong>
+        <div className="muted" style={{fontSize:11.5}}>
+          Puxa respostas dos e-mails que saíram pelo CRM e cria atividades no histórico do contato. Roda automático a cada 10 min em horário comercial.
+        </div>
+      </div>
+      <div className="row" style={{gap:8, alignItems:'center'}}>
+        {msg && <span className="muted" style={{fontSize:11.5, color: msg.tone==='success'?'hsl(var(--success))':'hsl(var(--danger))'}}>{msg.text}</span>}
+        <button className="btn btn-xs btn-accent" onClick={sync} disabled={busy}>
+          <I.refresh size={11}/>{busy ? 'Sincronizando…' : 'Sincronizar agora'}
+        </button>
       </div>
     </div>
   );

@@ -33,10 +33,12 @@ GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
 
 # scopes:
-#  - gmail.send: enviar (não lê inbox)
+#  - gmail.send: enviar
+#  - gmail.readonly: ler mensagens (pra puxar respostas)
 #  - email/profile/openid: identidade do user
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.readonly",
     "openid",
     "email",
     "profile",

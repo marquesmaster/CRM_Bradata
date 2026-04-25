@@ -90,3 +90,8 @@ class Atividade(Base):
 
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     deleted_by_id: Mapped[int | None] = mapped_column(Integer)
+
+    # Para emails sincronizados do Gmail
+    direcao: Mapped[str | None] = mapped_column(String(10), index=True)  # 'enviado' | 'recebido'
+    gmail_thread_id: Mapped[str | None] = mapped_column(String(100), index=True)
+    gmail_message_id: Mapped[str | None] = mapped_column(String(100), index=True, unique=False)

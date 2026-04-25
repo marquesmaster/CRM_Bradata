@@ -269,6 +269,15 @@ def google_disconnect(db: DBSession, current: CurrentUser):
     return {"ok": True}
 
 
+@router.post("/google/sync-replies")
+def google_sync_replies(db: DBSession, current: CurrentUser):
+    """Dispara sync manual de respostas do Gmail do user atual."""
+    from app.services.gmail_sync import sync_threads_for_user
+    if not current.google_refresh_token:
+        raise HTTPException(status_code=400, detail="Conta Google não conectada")
+    return sync_threads_for_user(db, current)
+
+
 def _close_with_msg(message: str, ok: bool) -> HTMLResponse:
     color = "#16a34a" if ok else "#dc2626"
     icon = "✓" if ok else "✗"

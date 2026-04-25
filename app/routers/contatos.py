@@ -274,6 +274,9 @@ def enviar_email_contato(
         contato_id=c.id,
         user_id=current.id,
         resultado=f"enviado via {result.get('via','smtp')} para {c.email}",
+        direcao="enviado",
+        gmail_thread_id=result.get("gmail_thread_id"),
+        gmail_message_id=result.get("gmail_message_id"),
     )
     db.add(atv)
 

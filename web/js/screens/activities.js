@@ -136,6 +136,8 @@ function Activities() {
                 }}>{a.titulo}</button>
                 <div className="row" style={{gap:8, marginTop:4, fontSize:11.5, flexWrap:'wrap'}}>
                   <span className="chip" style={{fontSize:10, padding:'1px 6px'}}>{a.tipo}</span>
+                  {a.direcao === 'enviado' && <span className="chip primary" style={{fontSize:10}}>📤 enviado</span>}
+                  {a.direcao === 'recebido' && <span className="chip success" style={{fontSize:10}}>📩 recebido</span>}
                   {a.prioridade === 'alta' && <span className="chip danger" style={{fontSize:10}}>Alta</span>}
                   {a.prioridade === 'urgente' && <span className="chip danger" style={{fontSize:10}}>🔥 Urgente</span>}
                   {isOverdue && <span className="chip danger" style={{fontSize:10}}>Atrasada</span>}
