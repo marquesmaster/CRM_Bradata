@@ -4,6 +4,7 @@ function Automacoes() {
   const [items, setItems] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [editing, setEditing] = React.useState(null);
+  const [sequencer, setSequencer] = React.useState(null);
   const [running, setRunning] = React.useState(false);
 
   const load = () => {
@@ -97,6 +98,11 @@ function Automacoes() {
                   <div className="card-sub">{meta.label || a.kind}</div>
                 </div>
                 <div className="row" style={{gap:4}}>
+                  {a.kind === 'cadencia_followup' && (
+                    <button className="icon-btn" title="Ver fila / sequencer" onClick={()=>setSequencer(a)}>
+                      <I.kanban size={14}/>
+                    </button>
+                  )}
                   <button className="icon-btn" title={a.ativo?'Desativar':'Ativar'} onClick={()=>toggle(a)}>
                     {a.ativo
                       ? <span style={{width:32, height:18, borderRadius:9, background:'hsl(var(--success))', display:'inline-block', position:'relative'}}>
@@ -151,7 +157,206 @@ function Automacoes() {
       {editing && <AutomacaoModal automacao={editing.id ? editing : null}
         templates={items.filter(x => x.kind === 'template_email' && x.ativo)}
         onClose={()=>setEditing(null)} onSaved={()=>{setEditing(null); load();}}/>}
+
+      {sequencer && <SequencerModal cadencia={sequencer} onClose={()=>setSequencer(null)}/>}
     </>
+  );
+}
+
+function SequencerModal({ cadencia, onClose }) {
+  const [state, setState] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [filter, setFilter] = React.useState('all'); // all | due | done | upcoming
+  const [running, setRunning] = React.useState(false);
+
+  const load = React.useCallback(() => {
+    setLoading(true);
+    window.API.api(`/automacoes/${cadencia.id}/cadencia/state`)
+      .then(setState)
+      .finally(()=>setLoading(false));
+  }, [cadencia.id]);
+
+  React.useEffect(load, [load]);
+
+  const runNow = async () => {
+    if (!confirm('Disparar a cadência agora? Vai mandar e-mails pra contatos com passos vencidos.')) return;
+    setRunning(true);
+    try {
+      await window.API.api('/automacoes/cadencia/run-now', { method: 'POST' });
+      // Espera 2s e recarrega o estado
+      setTimeout(load, 3000);
+    } catch (e) { alert(e.message); setRunning(false); }
+    finally { setTimeout(()=>setRunning(false), 3000); }
+  };
+
+  const filtered = (state?.contatos || []).filter(r => {
+    if (filter === 'due') return !r.concluido && r.dias_ate_proximo === 0;
+    if (filter === 'upcoming') return !r.concluido && r.dias_ate_proximo > 0;
+    if (filter === 'done') return r.concluido;
+    return true;
+  });
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:920, height:'85vh', display:'flex', flexDirection:'column'}}>
+        <div className="modal-head">
+          <div>
+            <div className="card-title">🔁 {cadencia.nome}</div>
+            <div className="muted" style={{fontSize:12}}>
+              Sequencer · {state?.passos.length || 0} passos · {state?.total_elegiveis || 0} contatos elegíveis
+            </div>
+          </div>
+          <button className="icon-btn" onClick={onClose}><I.x size={16}/></button>
+        </div>
+
+        <div style={{padding:'14px 26px', borderBottom:'1px solid hsl(var(--border))'}}>
+          {/* KPIs */}
+          {state && (
+            <div className="row" style={{gap:14, marginBottom:14, flexWrap:'wrap'}}>
+              <Stat label="Elegíveis" value={state.total_elegiveis} color="hsl(var(--info))"/>
+              <Stat label="Vencidos hoje" value={state.vencidos} color="hsl(var(--danger))"/>
+              <Stat label="Concluídos" value={state.concluidos} color="hsl(var(--success))"/>
+              <Stat label="Próximo passo" value={`${state.total_elegiveis - state.concluidos - state.vencidos} aguardando`} color="hsl(var(--warning))"/>
+            </div>
+          )}
+
+          {/* Pipeline visual de passos */}
+          {state && state.passos.length > 0 && (
+            <div style={{display:'flex', gap:6, marginBottom:14, flexWrap:'wrap'}}>
+              {state.passos.map((p, i) => (
+                <div key={i} style={{
+                  flex:1, minWidth:120, padding:'8px 10px',
+                  border:'1px solid hsl(var(--border))', borderRadius:8,
+                  background:'hsl(var(--surface-2,var(--surface)))',
+                }}>
+                  <div className="row" style={{gap:6, alignItems:'center', marginBottom:4}}>
+                    <span style={{width:18, height:18, borderRadius:'50%', background:'hsl(var(--b-accent))', color:'white', display:'grid', placeItems:'center', fontSize:10, fontWeight:700}}>{i+1}</span>
+                    <strong style={{fontSize:11.5}}>D+{p.dias_apos_ultima_atividade}</strong>
+                  </div>
+                  <div className="muted" style={{fontSize:10.5}}>
+                    {state.contatos.filter(c => c.passos_enviados.includes(i)).length} enviados
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Filtros + ação */}
+          <div className="row-between">
+            <div className="segment-ctrl">
+              <button className={filter==='all'?'active':''} onClick={()=>setFilter('all')}>Todos</button>
+              <button className={filter==='due'?'active':''} onClick={()=>setFilter('due')}>Vencidos hoje</button>
+              <button className={filter==='upcoming'?'active':''} onClick={()=>setFilter('upcoming')}>Aguardando</button>
+              <button className={filter==='done'?'active':''} onClick={()=>setFilter('done')}>Concluídos</button>
+            </div>
+            <div className="row" style={{gap:6}}>
+              <button className="btn btn-xs btn-ghost" onClick={load}><I.refresh size={10}/></button>
+              <button className="btn btn-xs btn-accent" onClick={runNow} disabled={running}>
+                <I.send size={10}/>{running ? 'Disparando…' : 'Disparar agora'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div style={{flex:1, overflowY:'auto'}}>
+          {loading && <div className="muted" style={{padding:32, textAlign:'center'}}>Carregando…</div>}
+          {!loading && filtered.length === 0 && (
+            <div className="muted" style={{padding:32, textAlign:'center'}}>
+              {filter === 'all' ? 'Nenhum contato elegível com os filtros atuais da cadência.' : 'Nenhum contato neste estado.'}
+            </div>
+          )}
+          {!loading && filtered.length > 0 && (
+            <table className="table">
+              <thead><tr>
+                <th>Contato</th>
+                <th>Empresa</th>
+                <th>Última atividade</th>
+                <th>Progresso</th>
+                <th>Próximo</th>
+                <th></th>
+              </tr></thead>
+              <tbody>
+                {filtered.map(r => (
+                  <tr key={r.contato_id}>
+                    <td>
+                      <div className="row" style={{gap:8}}>
+                        <UI.Avatar name={r.nome} size={28}/>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:12.5, fontWeight:600}}>{r.nome}</div>
+                          <div className="muted" style={{fontSize:11}}>{r.cargo || '—'}{r.decisor && <span className="chip warn" style={{fontSize:9, padding:'1px 4px', marginLeft:4}}>decisor</span>}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      {r.empresa_id ? (
+                        <button className="link" style={{background:'none', border:0, padding:0, cursor:'pointer', fontSize:12, color:'hsl(var(--b-accent))'}}
+                          onClick={()=>window.__nav('lead', String(r.empresa_id))}>
+                          {r.empresa_nome || `Empresa #${r.empresa_id}`}
+                        </button>
+                      ) : <span className="muted">—</span>}
+                    </td>
+                    <td className="muted" style={{fontSize:11.5}}>
+                      há {r.dias_desde_ultima_atividade} dia{r.dias_desde_ultima_atividade===1?'':'s'}
+                    </td>
+                    <td>
+                      <div className="row" style={{gap:3}}>
+                        {(state.passos || []).map((_, i) => {
+                          const sent = r.passos_enviados.includes(i);
+                          const isNext = r.proximo_passo_idx === i;
+                          return (
+                            <span key={i} style={{
+                              width:18, height:18, borderRadius:4,
+                              background: sent ? 'hsl(var(--success))' :
+                                          isNext ? 'hsl(var(--warning))' :
+                                          'hsl(var(--surface-3, var(--border)))',
+                              color: 'white',
+                              display:'grid', placeItems:'center',
+                              fontSize:10, fontWeight:700,
+                            }} title={sent ? 'Enviado' : isNext ? 'Próximo' : 'Pendente'}>
+                              {sent ? '✓' : (i+1)}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td>
+                      {r.concluido ? (
+                        <span className="chip success" style={{fontSize:10}}>Concluído</span>
+                      ) : r.dias_ate_proximo === 0 ? (
+                        <span className="chip danger" style={{fontSize:10}}>Vencido — dispara hoje</span>
+                      ) : (
+                        <span className="muted" style={{fontSize:11.5}}>em {r.dias_ate_proximo} dia{r.dias_ate_proximo===1?'':'s'}</span>
+                      )}
+                    </td>
+                    <td>
+                      {r.email && (
+                        <a href={`mailto:${r.email}`} className="icon-btn" title="E-mail manual"><I.mail size={12}/></a>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="modal-foot">
+          <span className="muted" style={{flex:1, fontSize:11.5}}>
+            {state ? `${state.concluidos} concluídos · ${state.vencidos} pendentes hoje · ${state.total_elegiveis - state.concluidos - state.vencidos} aguardando` : ''}
+          </span>
+          <button className="btn btn-sm btn-ghost" onClick={onClose}>Fechar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, color }) {
+  return (
+    <div style={{flex:1, minWidth:120, padding:10, border:'1px solid hsl(var(--border))', borderRadius:8, background:'hsl(var(--surface))'}}>
+      <div className="card-section-title">{label}</div>
+      <div style={{fontSize:20, fontWeight:800, color, marginTop:2}}>{value}</div>
+    </div>
   );
 }
 

@@ -139,6 +139,77 @@ def _send(db, sender: User, contato: Contato, empresa: Empresa | None, template:
     return True, f"enviado via {via}"
 
 
+def state_for_cadencia(db, cadencia: Automacao) -> dict:
+    """Retorna o estado atual da cadência: quem está elegível, em qual passo
+    cada contato está, quando o próximo passo dispara."""
+    cfg = cadencia.config or {}
+    passos = cfg.get("passos") or []
+    if not passos:
+        return {"id": cadencia.id, "nome": cadencia.nome, "passos": [], "contatos": []}
+
+    elegiveis = _eligible_contatos(db, cfg.get("filtro"))
+    now = datetime.now(timezone.utc)
+
+    rows = []
+    for c in elegiveis:
+        ult = _last_activity_date(db, c)
+        idade_dias = (now - ult).days
+        sent_steps = []
+        next_step_idx = None
+        for idx in range(len(passos)):
+            if _already_sent_step(db, c, cadencia.id, idx):
+                sent_steps.append(idx)
+            elif next_step_idx is None:
+                next_step_idx = idx
+
+        next_due = None
+        next_dias = None
+        if next_step_idx is not None:
+            dias_threshold = int(passos[next_step_idx].get("dias_apos_ultima_atividade", 0))
+            next_due = ult + timedelta(days=dias_threshold)
+            next_dias = max(0, dias_threshold - idade_dias)
+
+        empresa_nome = None
+        if c.empresa_id:
+            from app.models.empresa import Empresa
+            emp = db.get(Empresa, c.empresa_id)
+            empresa_nome = (emp.razao_social or emp.nome_fantasia) if emp else None
+
+        rows.append({
+            "contato_id": c.id,
+            "nome": c.nome,
+            "email": c.email,
+            "cargo": c.cargo,
+            "empresa_id": c.empresa_id,
+            "empresa_nome": empresa_nome,
+            "decisor": c.decisor,
+            "fonte": c.fonte,
+            "ultima_atividade_em": ult.isoformat() if ult else None,
+            "dias_desde_ultima_atividade": idade_dias,
+            "passos_enviados": sent_steps,
+            "proximo_passo_idx": next_step_idx,
+            "proximo_envio_em": next_due.isoformat() if next_due else None,
+            "dias_ate_proximo": next_dias,
+            "concluido": next_step_idx is None,
+        })
+
+    rows.sort(key=lambda r: (
+        99999 if r["concluido"] else (r["dias_ate_proximo"] if r["dias_ate_proximo"] is not None else 99999),
+        r["nome"] or "",
+    ))
+
+    return {
+        "id": cadencia.id,
+        "nome": cadencia.nome,
+        "ativo": cadencia.ativo,
+        "passos": passos,
+        "total_elegiveis": len(rows),
+        "concluidos": sum(1 for r in rows if r["concluido"]),
+        "vencidos": sum(1 for r in rows if not r["concluido"] and r["dias_ate_proximo"] == 0),
+        "contatos": rows,
+    }
+
+
 def run_cadencia_job() -> dict:
     """Executa todas as cadências ativas. Retorna resumo agregado."""
     from app.core.database import SessionLocal

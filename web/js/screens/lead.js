@@ -231,7 +231,12 @@ function LeadDetail({ companyId, onBack }) {
           )}
 
           {/* Timeline 360° */}
-          <TimelinePanel items={timeline} loading={loadingTl} onReload={loadTimeline}/>
+          <TimelinePanel
+            items={timeline}
+            loading={loadingTl}
+            onReload={loadTimeline}
+            empresaId={c.id}
+          />
         </div>
 
         <div style={{display:'flex', flexDirection:'column', gap:'var(--gap)'}}>
@@ -392,7 +397,29 @@ function Info({ label, value, hot }) {
   );
 }
 
-function TimelinePanel({ items, loading, onReload }) {
+function TimelinePanel({ items, loading, onReload, empresaId }) {
+  const [draft, setDraft] = React.useState('');
+  const [saving, setSaving] = React.useState(false);
+  const [filter, setFilter] = React.useState('all');  // all | atividade | nota | historico
+
+  const addNota = async () => {
+    const txt = draft.trim();
+    if (!txt) return;
+    setSaving(true);
+    try {
+      await window.API.api('/notas', {
+        method: 'POST',
+        body: JSON.stringify({ conteudo: txt, empresa_id: empresaId }),
+      });
+      setDraft('');
+      onReload();
+    } catch (e) { alert(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const filtered = items.filter(ev => filter === 'all' || ev.kind === filter);
+  const counts = items.reduce((acc, ev) => { acc[ev.kind] = (acc[ev.kind] || 0) + 1; return acc; }, {});
+
   return (
     <div className="card">
       <div className="card-head">
@@ -400,14 +427,57 @@ function TimelinePanel({ items, loading, onReload }) {
           <div className="card-title">Timeline 360°</div>
           <div className="card-sub">Tudo que aconteceu — atividades, notas, oportunidades</div>
         </div>
-        <button className="btn btn-xs btn-ghost" onClick={onReload}><I.refresh size={10}/></button>
+        <button className="btn btn-xs btn-ghost" onClick={onReload} title="Recarregar"><I.refresh size={10}/></button>
       </div>
-      <div className="card-p" style={{padding:0}}>
+
+      {/* Caixa de nota inline */}
+      <div style={{padding:'14px 24px', borderBottom:'1px solid hsl(var(--border))'}}>
+        <div className="row" style={{gap:8, alignItems:'flex-start'}}>
+          <div style={{
+            width:32, height:32, borderRadius:'50%',
+            background:'hsl(var(--warning) / .15)', color:'hsl(var(--warning))',
+            display:'grid', placeItems:'center', flex:'0 0 auto',
+          }}><I.doc size={14}/></div>
+          <div style={{flex:1, minWidth:0}}>
+            <textarea
+              className="input"
+              placeholder="Adicionar uma nota… (Ctrl+Enter envia)"
+              rows={2}
+              value={draft}
+              onChange={e=>setDraft(e.target.value)}
+              onKeyDown={e=>{ if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); addNota(); } }}
+              style={{resize:'vertical', fontSize:13, fontFamily:'inherit'}}
+            />
+            <div className="row-between" style={{marginTop:6}}>
+              <span className="muted" style={{fontSize:11}}>Visível pra todo o time</span>
+              <button className="btn btn-xs btn-accent" onClick={addNota} disabled={saving || !draft.trim()}>
+                {saving ? 'Salvando…' : 'Adicionar nota'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Filtros */}
+      {items.length > 0 && (
+        <div style={{padding:'10px 24px', borderBottom:'1px solid hsl(var(--border))'}}>
+          <div className="segment-ctrl" style={{flexWrap:'wrap', gap:4}}>
+            <button className={filter==='all'?'active':''} onClick={()=>setFilter('all')}>
+              Todos <span style={{opacity:.6, marginLeft:4}}>{items.length}</span>
+            </button>
+            {counts.atividade > 0 && <button className={filter==='atividade'?'active':''} onClick={()=>setFilter('atividade')}>Atividades {counts.atividade}</button>}
+            {counts.nota > 0 && <button className={filter==='nota'?'active':''} onClick={()=>setFilter('nota')}>Notas {counts.nota}</button>}
+            {counts.historico > 0 && <button className={filter==='historico'?'active':''} onClick={()=>setFilter('historico')}>Eventos {counts.historico}</button>}
+          </div>
+        </div>
+      )}
+
+      <div style={{padding:0}}>
         {loading && <div style={{padding:20, textAlign:'center'}} className="muted">Carregando…</div>}
-        {!loading && items.length === 0 && (
-          <div style={{padding:24, textAlign:'center'}} className="muted">Nenhum evento ainda.</div>
+        {!loading && filtered.length === 0 && (
+          <div style={{padding:24, textAlign:'center'}} className="muted">Nenhum evento ainda. Comece adicionando uma nota acima.</div>
         )}
-        {!loading && items.map((ev, i) => <TimelineRow key={`${ev.kind}-${ev.id}-${i}`} ev={ev}/>)}
+        {!loading && filtered.map((ev, i) => <TimelineRow key={`${ev.kind}-${ev.id}-${i}`} ev={ev}/>)}
       </div>
     </div>
   );
@@ -440,8 +510,12 @@ function TimelineRow({ ev }) {
     const d = ev.data;
     icon = I.doc;
     color = 'hsl(var(--warning))';
-    title = 'Nota adicionada';
-    body = <span style={{fontSize:12}}>{(d.texto || d.conteudo || '').slice(0, 200)}</span>;
+    title = 'Nota';
+    body = (
+      <span style={{fontSize:12.5, whiteSpace:'pre-wrap', lineHeight:1.5}}>
+        {(d.conteudo || d.texto || '').slice(0, 400)}
+      </span>
+    );
   } else if (ev.kind === 'historico') {
     const d = ev.data;
     icon = d.acao.startsWith('fechou_ganha') ? I.check :
