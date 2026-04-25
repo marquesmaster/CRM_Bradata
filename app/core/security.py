@@ -30,10 +30,17 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(_truncate(plain), hashed)
 
 
-def create_access_token(subject: str | int, extra: dict[str, Any] | None = None) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
+def create_access_token(
+    subject: str | int,
+    extra: dict[str, Any] | None = None,
+    expires_minutes: int | None = None,
+) -> str:
+    minutes = expires_minutes if expires_minutes is not None else settings.access_token_expire_minutes
+    expire = datetime.now(timezone.utc) + timedelta(minutes=minutes)
     payload: dict[str, Any] = {"sub": str(subject), "exp": expire, "iat": datetime.now(timezone.utc)}
     if extra:
+        # exp_minutes não vai pra dentro do JWT — é só pra controle aqui
+        extra = {k: v for k, v in extra.items() if k != "exp_minutes"}
         payload.update(extra)
     return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
 

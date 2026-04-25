@@ -27,6 +27,7 @@ from app.models.pncp import (
 )
 from app.models.proposta import Proposta, PropostaStatus
 from app.models.user import User, UserRole, UserStatus
+from app.models.verification_code import VerificationCode, VerificationKind
 
 __all__ = [
     "Atividade",
@@ -64,4 +65,6 @@ __all__ = [
     "User",
     "UserRole",
     "UserStatus",
+    "VerificationCode",
+    "VerificationKind",
 ]
