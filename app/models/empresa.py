@@ -49,6 +49,11 @@ class Empresa(Base):
     porte: Mapped[str | None] = mapped_column(String(40))
     sector: Mapped[str | None] = mapped_column(String(80), index=True)
 
+    # Capturado do CNPJ.WS (lista de sócios + situação cadastral + regime tributário)
+    socios: Mapped[list | None] = mapped_column(JSON)
+    situacao_cadastral: Mapped[str | None] = mapped_column(String(40))
+    regime_tributario: Mapped[str | None] = mapped_column(String(80))
+
     faturamento_estimado: Mapped[float | None] = mapped_column(Float, index=True)
     num_funcionarios: Mapped[int | None] = mapped_column(Integer)
     capital_social: Mapped[float | None] = mapped_column(Float)

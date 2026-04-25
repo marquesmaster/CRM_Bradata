@@ -1,4 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import and_, func, or_
 
 from app.core.deps import AdminUser, CurrentUser, DBSession
@@ -252,19 +253,257 @@ def enriquecer_pendentes(
 
 @router.post("/{empresa_id}/enriquecer-lusha")
 def enriquecer_lusha(empresa_id: int, db: DBSession, current: CurrentUser):
-    """Busca decisores (CTO, Head de TI, etc.) via Lusha. Cache permanente."""
+    """[Compat] Busca candidates Lusha (não revela). Use /lusha/candidates/{id}/revelar pra revelar."""
+    from app.services.lusha import buscar_candidates_empresa
     empresa = db.get(Empresa, empresa_id)
     if not empresa:
         raise HTTPException(status_code=404, detail="Empresa não encontrada")
     try:
-        resumo = lusha_enriquecer(db, empresa)
+        resumo = buscar_candidates_empresa(db, empresa)
     except LushaError as e:
         raise HTTPException(status_code=502, detail=str(e))
-    log_event(db, current.id, "empresa", empresa.id, "enriqueceu_lusha",
-              {"novos": resumo.get("novos", 0), "ja_existentes": resumo.get("ja_existentes", 0),
-               "dominio": resumo.get("dominio")})
+    log_event(db, current.id, "empresa", empresa.id, "lusha_busca",
+              {"novos": resumo.get("novos", 0), "atualizados": resumo.get("atualizados", 0),
+               "dominio": resumo.get("dominio"), "total": resumo.get("total", 0)})
     db.commit()
     return resumo
+
+
+@router.post("/{empresa_id}/lusha/search")
+def lusha_search(empresa_id: int, db: DBSession, current: CurrentUser):
+    """Busca contatos Lusha pra o componente LushaEnrichButton (frontend novo).
+    Retorna {requestId, contacts: [{contactId, fullName, jobTitle, hasPhones,
+    hasWorkEmail, isShown, ...}]}. NÃO consome crédito de reveal.
+    """
+    from app.services.lusha import search_for_frontend
+    empresa = db.get(Empresa, empresa_id)
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+    try:
+        result = search_for_frontend(db, empresa)
+    except LushaError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    log_event(db, current.id, "empresa", empresa_id, "lusha_search_v2",
+              {"total": len(result.get("contacts", [])), "domain": result.get("domain")})
+    db.commit()
+    return result
+
+
+class LushaEnrichBatchIn(BaseModel):
+    request_id: str | None = None
+    contact_ids: list[str] = []     # lusha_person_ids selecionados pelo user
+
+
+@router.post("/{empresa_id}/lusha/enrich-batch")
+def lusha_enrich_batch(
+    empresa_id: int, payload: LushaEnrichBatchIn, db: DBSession, current: CurrentUser
+):
+    """Revela em lote os contacts selecionados — CONSOME 1 CRÉDITO POR contact.
+    Retorna lista de Contatos criados/atualizados.
+    """
+    from app.models.lusha_candidate import LushaCandidate
+    from app.services.lusha import revelar_candidate
+    if not db.get(Empresa, empresa_id):
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+    if not payload.contact_ids:
+        return {"revealed": [], "errors": []}
+
+    candidates = (
+        db.query(LushaCandidate)
+        .filter(
+            LushaCandidate.empresa_id == empresa_id,
+            LushaCandidate.lusha_person_id.in_(payload.contact_ids),
+        )
+        .all()
+    )
+    revealed = []
+    errors = []
+    for cand in candidates:
+        try:
+            contato = revelar_candidate(db, cand, current.id)
+            revealed.append({
+                "id": contato.id, "nome": contato.nome, "cargo": contato.cargo,
+                "email": contato.email, "telefone": contato.telefone, "celular": contato.celular,
+                "linkedin_url": contato.linkedin_url,
+            })
+        except LushaError as e:
+            errors.append({"contactId": cand.lusha_person_id, "error": str(e)})
+            if "créditos" in str(e).lower():
+                break  # para imediatamente
+
+    log_event(db, current.id, "empresa", empresa_id, "lusha_enrich_batch",
+              {"revealed": len(revealed), "errors": len(errors)})
+    return {"revealed": revealed, "errors": errors}
+
+
+@router.get("/{empresa_id}/full")
+def empresa_full(empresa_id: int, db: DBSession, _: CurrentUser):
+    """Retorna empresa + KPIs + contratos PNCP + sócios + agregados pra a tela
+    de Fornecedor Detalhe. Compatível com o shape esperado pelo `useFornecedor`
+    + `useFornecedorCRM` do frontend novo.
+    """
+    from app.models.contato import Contato
+    from app.models.lusha_candidate import LushaCandidate
+    from app.models.pncp import PncpContrato, PncpResultado
+    empresa = db.get(Empresa, empresa_id)
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+
+    # Contratos PNCP via PncpResultado (fornecedor que ganhou) → join com PncpContrato
+    resultados = (
+        db.query(PncpResultado)
+        .filter(PncpResultado.empresa_id == empresa_id)
+        .order_by(PncpResultado.data_resultado.desc().nullslast())
+        .all()
+    )
+    contratos = []
+    for r in resultados:
+        contratos.append({
+            "id": r.id,
+            "title": r.numero_controle_pncp_compra,
+            "orgao_nome": r.orgao_razao_social,
+            "data_inicio_vigencia": r.data_resultado.isoformat() if r.data_resultado else None,
+            "data_fim_vigencia": None,  # sem dado direto
+            "valor_global": float(r.valor_total_homologado or 0),
+            "uf": r.unidade_orgao_uf_sigla,
+            "classificacao_ia": getattr(r, "classificacao_bodyshop", None),
+            "tipo_servico_identificado": getattr(r, "tipo_servico_ia", None),
+            "modalidade_licitacao_nome": r.modalidade_nome,
+            "esfera_nome": r.esfera_nome,
+            "ano": (r.data_resultado.year if r.data_resultado else None),
+            "url_contrato": None,
+        })
+
+    total_contratos = len(contratos)
+    valor_total = sum(c["valor_global"] for c in contratos)
+    primeiro = min((c["data_inicio_vigencia"] for c in contratos if c["data_inicio_vigencia"]), default=None)
+    ultimo = max((c["data_inicio_vigencia"] for c in contratos if c["data_inicio_vigencia"]), default=None)
+
+    # Contatos
+    contatos_count = (
+        db.query(func.count(Contato.id))
+        .filter(Contato.empresa_id == empresa_id, Contato.deleted_at.is_(None))
+        .scalar() or 0
+    )
+    lusha_total = (
+        db.query(func.count(LushaCandidate.id))
+        .filter(LushaCandidate.empresa_id == empresa_id)
+        .scalar() or 0
+    )
+    lusha_revelados = (
+        db.query(func.count(LushaCandidate.id))
+        .filter(LushaCandidate.empresa_id == empresa_id, LushaCandidate.revelado_em.isnot(None))
+        .scalar() or 0
+    )
+
+    # Endereço completo
+    endereco_parts = [empresa.logradouro, empresa.numero, empresa.complemento, empresa.bairro,
+                     empresa.municipio, empresa.uf, empresa.cep]
+    endereco = ", ".join(p for p in endereco_parts if p)
+
+    return {
+        "id": empresa.id,
+        "cnpj": empresa.cnpj,
+        "nome": empresa.razao_social or empresa.nome_fantasia or empresa.cnpj,
+        "razao_social": empresa.razao_social,
+        "nome_fantasia": empresa.nome_fantasia,
+        "telefone": empresa.telefone,
+        "email": empresa.email,
+        "website": empresa.website,
+        "linkedin": empresa.linkedin_url,
+        "endereco": endereco,
+        "cidade": empresa.municipio,
+        "estado": empresa.uf,
+        "cep": empresa.cep,
+        # Enriquecimento CNPJ.WS
+        "dados_enriquecidos": empresa.enriquecida_em is not None,
+        "data_enriquecimento": empresa.enriquecida_em.isoformat() if empresa.enriquecida_em else None,
+        "porte": empresa.porte,
+        "natureza_juridica": empresa.natureza_juridica,
+        "situacao_cadastral": empresa.situacao_cadastral,
+        "regime_tributario": empresa.regime_tributario,
+        "capital_social": empresa.capital_social,
+        "data_abertura": empresa.data_abertura.isoformat() if empresa.data_abertura else None,
+        "atividade_principal_codigo": empresa.cnae_principal,
+        "atividade_principal": empresa.cnae_principal_descricao,
+        "atividades_secundarias": empresa.cnaes_secundarios or [],
+        "setor": empresa.sector,
+        "nicho": empresa.cnae_principal_descricao,
+        "faixa_faturamento": _faixa_faturamento(empresa.faturamento_estimado),
+        "socios": empresa.socios or [],
+        # Stats de contratos
+        "totalContratos": total_contratos,
+        "valorTotal": valor_total,
+        "primeiroContrato": primeiro,
+        "ultimoContrato": ultimo,
+        "contratos": contratos,
+        # Outros
+        "contatos_count": contatos_count,
+        "lusha_total": lusha_total,
+        "lusha_revelados": lusha_revelados,
+        "is_icp": empresa.is_icp,
+        "icp_score": empresa.icp_score,
+        "icp_motivo": empresa.icp_motivo,
+        "status": empresa.status.value,
+    }
+
+
+@router.get("/{empresa_id}/lusha/candidates")
+def listar_candidates_lusha(empresa_id: int, db: DBSession, _: CurrentUser):
+    """Lista candidates Lusha da empresa (sem dados revelados)."""
+    from app.models.lusha_candidate import LushaCandidate
+    empresa = db.get(Empresa, empresa_id)
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+    rows = (
+        db.query(LushaCandidate)
+        .filter(LushaCandidate.empresa_id == empresa_id)
+        .order_by(LushaCandidate.revelado_em.desc().nullslast(), LushaCandidate.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": c.id,
+            "lusha_person_id": c.lusha_person_id,
+            "nome": c.nome,
+            "cargo": c.cargo,
+            "departamento": c.departamento,
+            "linkedin_url": c.linkedin_url,
+            "has_email": c.has_email, "has_phone": c.has_phone, "has_mobile": c.has_mobile,
+            "n_emails": c.n_emails, "n_phones": c.n_phones,
+            "revelado_em": c.revelado_em,
+            "contato_id": c.contato_id,
+            "created_at": c.created_at,
+        }
+        for c in rows
+    ]
+
+
+@router.post("/lusha/candidates/{cand_id}/revelar")
+def revelar_lusha(cand_id: int, db: DBSession, current: CurrentUser):
+    """Revela um candidate Lusha — CONSOME 1 CRÉDITO. Cria Contato real."""
+    from app.models.lusha_candidate import LushaCandidate
+    from app.services.lusha import revelar_candidate
+    c = db.get(LushaCandidate, cand_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Candidate não encontrado")
+    try:
+        contato = revelar_candidate(db, c, current.id)
+    except LushaError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    log_event(db, current.id, "empresa", c.empresa_id, "lusha_revelou",
+              {"candidate_id": c.id, "contato_id": contato.id})
+    db.commit()
+    return {
+        "id": contato.id,
+        "nome": contato.nome,
+        "cargo": contato.cargo,
+        "email": contato.email,
+        "telefone": contato.telefone,
+        "celular": contato.celular,
+        "linkedin_url": contato.linkedin_url,
+        "lusha_person_id": contato.lusha_person_id,
+    }
 
 
 @router.get("/{empresa_id}/diag")

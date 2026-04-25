@@ -69,8 +69,29 @@ def enrich_empresa_from_cnpjws(empresa: Empresa) -> bool:
     empresa.natureza_juridica = (data.get("natureza_juridica") or {}).get("descricao")
     empresa.porte = (data.get("porte") or {}).get("descricao")
 
+    # Sócios (lista enxuta — guarda nome, qualificação, tipo, data_entrada)
+    socios_raw = data.get("socios") or []
+    if socios_raw:
+        empresa.socios = [
+            {
+                "nome": s.get("nome"),
+                "tipo": s.get("tipo"),
+                "data_entrada": s.get("data_entrada"),
+                "qualificacao": (s.get("qualificacao_socio") or {}).get("descricao"),
+            }
+            for s in socios_raw
+        ]
+
+    # Regime tributário (último ano disponível)
+    regimes = data.get("regimes_tributarios") or []
+    if regimes:
+        # Pega o mais recente
+        ultimo = sorted(regimes, key=lambda r: r.get("ano", 0), reverse=True)[0]
+        empresa.regime_tributario = ultimo.get("regime_tributario") or ultimo.get("forma_de_tributacao")
+
     estab = data.get("estabelecimento") or {}
     empresa.nome_fantasia = estab.get("nome_fantasia") or empresa.nome_fantasia
+    empresa.situacao_cadastral = estab.get("situacao_cadastral") or empresa.situacao_cadastral
     empresa.data_abertura = parse_iso_datetime(estab.get("data_inicio_atividade"))
     empresa.logradouro = estab.get("logradouro") or empresa.logradouro
     empresa.numero = estab.get("numero") or empresa.numero
