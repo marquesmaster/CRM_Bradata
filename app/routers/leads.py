@@ -11,6 +11,11 @@ from app.schemas.common import Page
 from app.schemas.lead import LeadConvert, LeadCreate, LeadOut, LeadUpdate
 from app.schemas.oportunidade import OportunidadeOut
 from app.services.historico import log_event
+from app.services.permissions import (
+    assert_not_readonly,
+    assert_owner_or_admin,
+    filter_by_owner,
+)
 from app.services.soft_delete import filter_active, restore, soft_delete
 
 router = APIRouter()
@@ -19,7 +24,7 @@ router = APIRouter()
 @router.get("", response_model=Page[LeadOut])
 def list_leads(
     db: DBSession,
-    _: CurrentUser,
+    current: CurrentUser,
     status_: LeadStatus | None = Query(None, alias="status"),
     owner_id: int | None = None,
     empresa_id: int | None = None,
@@ -32,6 +37,7 @@ def list_leads(
     query = db.query(Lead)
     if not include_deleted:
         query = filter_active(query, Lead)
+    query = filter_by_owner(query, Lead, current)
     if status_:
         query = query.filter(Lead.status == status_)
     if owner_id:
@@ -57,6 +63,7 @@ def get_lead(lead_id: int, db: DBSession, _: CurrentUser):
 
 @router.post("", response_model=LeadOut, status_code=status.HTTP_201_CREATED)
 def create_lead(payload: LeadCreate, db: DBSession, current: CurrentUser):
+    assert_not_readonly(current)
     if not db.get(Empresa, payload.empresa_id):
         raise HTTPException(status_code=400, detail="Empresa inexistente")
     lead = Lead(**payload.model_dump())
@@ -73,9 +80,11 @@ def create_lead(payload: LeadCreate, db: DBSession, current: CurrentUser):
 
 @router.patch("/{lead_id}", response_model=LeadOut)
 def update_lead(lead_id: int, payload: LeadUpdate, db: DBSession, current: CurrentUser):
+    assert_not_readonly(current)
     lead = db.get(Lead, lead_id)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
+    assert_owner_or_admin(lead, current)
     data = payload.model_dump(exclude_unset=True)
     new_status = data.get("status")
     before_status = lead.status
@@ -95,9 +104,11 @@ def update_lead(lead_id: int, payload: LeadUpdate, db: DBSession, current: Curre
 
 @router.delete("/{lead_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_lead(lead_id: int, db: DBSession, current: CurrentUser):
+    assert_not_readonly(current)
     lead = db.get(Lead, lead_id)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
+    assert_owner_or_admin(lead, current)
     log_event(db, current.id, "lead", lead.id, "excluiu", None)
     soft_delete(db, current.id, lead)
     db.commit()

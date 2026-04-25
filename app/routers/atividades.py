@@ -10,6 +10,7 @@ from app.schemas.common import Page
 from app.models.notification import NotificationKind
 from app.services.historico import log_event
 from app.services import notify
+from app.services.permissions import assert_not_readonly, can_see_all
 from app.services.soft_delete import soft_delete, restore, filter_active
 
 router = APIRouter()
@@ -18,7 +19,7 @@ router = APIRouter()
 @router.get("", response_model=Page[AtividadeOut])
 def list_atividades(
     db: DBSession,
-    _: CurrentUser,
+    current: CurrentUser,
     empresa_id: int | None = None,
     oportunidade_id: int | None = None,
     contato_id: int | None = None,
@@ -34,6 +35,9 @@ def list_atividades(
     query = db.query(Atividade)
     if not include_deleted:
         query = filter_active(query, Atividade)
+    if not can_see_all(current):
+        # Vendedor/BDR só vê suas próprias atividades (criou ou foi atribuído)
+        query = query.filter(or_(Atividade.user_id == current.id, Atividade.assignee_id == current.id))
     if empresa_id:
         query = query.filter(Atividade.empresa_id == empresa_id)
     if oportunidade_id:
@@ -67,6 +71,7 @@ def list_atividades(
 
 @router.post("", response_model=AtividadeOut, status_code=status.HTTP_201_CREATED)
 def create_atividade(payload: AtividadeCreate, db: DBSession, current: CurrentUser):
+    assert_not_readonly(current)
     at = Atividade(**payload.model_dump(), user_id=current.id)
     if at.assignee_id is None:
         at.assignee_id = current.id
@@ -90,9 +95,12 @@ def create_atividade(payload: AtividadeCreate, db: DBSession, current: CurrentUs
 
 @router.patch("/{atividade_id}", response_model=AtividadeOut)
 def update_atividade(atividade_id: int, payload: AtividadeUpdate, db: DBSession, current: CurrentUser):
+    assert_not_readonly(current)
     at = db.get(Atividade, atividade_id)
     if not at:
         raise HTTPException(status_code=404, detail="Atividade não encontrada")
+    if not can_see_all(current) and at.user_id != current.id and at.assignee_id != current.id:
+        raise HTTPException(status_code=403, detail="Apenas autor/atribuído ou admin pode alterar")
     data = payload.model_dump(exclude_unset=True)
     new_status = data.get("status")
     before_status = at.status
@@ -112,9 +120,12 @@ def update_atividade(atividade_id: int, payload: AtividadeUpdate, db: DBSession,
 
 @router.delete("/{atividade_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_atividade(atividade_id: int, db: DBSession, current: CurrentUser):
+    assert_not_readonly(current)
     at = db.get(Atividade, atividade_id)
     if not at:
         raise HTTPException(status_code=404, detail="Atividade não encontrada")
+    if not can_see_all(current) and at.user_id != current.id:
+        raise HTTPException(status_code=403, detail="Apenas autor pode excluir")
     log_event(db, current.id, "atividade", at.id, "excluiu", {"titulo": at.titulo})
     soft_delete(db, current.id, at)
     db.commit()

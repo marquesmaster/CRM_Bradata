@@ -53,9 +53,11 @@ function Deals() {
           <button className="btn btn-ghost btn-sm" onClick={()=>window.__nav('pipeline')}>
             <I.kanban size={12}/>Ver Kanban
           </button>
-          <button className="btn btn-accent btn-sm" onClick={()=>setEditing({})}>
-            <I.plus size={12}/>Novo deal
-          </button>
+          {!window.PERM.isReadonly() && (
+            <button className="btn btn-accent btn-sm" onClick={()=>setEditing({})}>
+              <I.plus size={12}/>Novo deal
+            </button>
+          )}
         </div>
       </div>
 

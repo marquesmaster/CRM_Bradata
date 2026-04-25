@@ -16,6 +16,12 @@ from app.schemas.oportunidade import (
 from app.models.notification import NotificationKind
 from app.services.historico import log_event
 from app.services import notify
+from app.services.permissions import (
+    assert_not_readonly,
+    assert_owner_or_admin,
+    can_see_all,
+    filter_by_owner,
+)
 from app.services.soft_delete import soft_delete, filter_active
 
 router = APIRouter()
@@ -24,7 +30,7 @@ router = APIRouter()
 @router.get("", response_model=Page[OportunidadeOut])
 def list_oportunidades(
     db: DBSession,
-    _: CurrentUser,
+    current: CurrentUser,
     status_: OportunidadeStatus | None = Query(None, alias="status"),
     pipeline_id: int | None = None,
     estagio_id: int | None = None,
@@ -37,6 +43,7 @@ def list_oportunidades(
     query = db.query(Oportunidade)
     if not include_deleted:
         query = filter_active(query, Oportunidade)
+    query = filter_by_owner(query, Oportunidade, current)
     if status_:
         query = query.filter(Oportunidade.status == status_)
     if pipeline_id:
@@ -63,6 +70,7 @@ def get_oportunidade(op_id: int, db: DBSession, _: CurrentUser):
 
 @router.post("", response_model=OportunidadeOut, status_code=status.HTTP_201_CREATED)
 def create_oportunidade(payload: OportunidadeCreate, db: DBSession, current: CurrentUser):
+    assert_not_readonly(current)
     if not db.get(Empresa, payload.empresa_id):
         raise HTTPException(status_code=400, detail="Empresa inexistente")
     estagio = db.get(PipelineEstagio, payload.estagio_id)
@@ -83,9 +91,11 @@ def create_oportunidade(payload: OportunidadeCreate, db: DBSession, current: Cur
 
 @router.patch("/{op_id}", response_model=OportunidadeOut)
 def update_oportunidade(op_id: int, payload: OportunidadeUpdate, db: DBSession, current: CurrentUser):
+    assert_not_readonly(current)
     op = db.get(Oportunidade, op_id)
     if not op:
         raise HTTPException(status_code=404, detail="Oportunidade não encontrada")
+    assert_owner_or_admin(op, current)
     data = payload.model_dump(exclude_unset=True)
     if "estagio_id" in data:
         estagio = db.get(PipelineEstagio, data["estagio_id"])
@@ -121,9 +131,11 @@ def update_oportunidade(op_id: int, payload: OportunidadeUpdate, db: DBSession, 
 
 @router.post("/{op_id}/fechar", response_model=OportunidadeOut)
 def fechar_oportunidade(op_id: int, payload: OportunidadeCloseRequest, db: DBSession, current: CurrentUser):
+    assert_not_readonly(current)
     op = db.get(Oportunidade, op_id)
     if not op:
         raise HTTPException(status_code=404, detail="Oportunidade não encontrada")
+    assert_owner_or_admin(op, current)
     if payload.status == OportunidadeStatus.aberta:
         raise HTTPException(status_code=400, detail="Para reabrir, use PATCH")
     op.status = payload.status
@@ -152,9 +164,11 @@ def fechar_oportunidade(op_id: int, payload: OportunidadeCloseRequest, db: DBSes
 
 @router.delete("/{op_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_oportunidade(op_id: int, db: DBSession, current: CurrentUser):
+    assert_not_readonly(current)
     op = db.get(Oportunidade, op_id)
     if not op:
         raise HTTPException(status_code=404, detail="Oportunidade não encontrada")
+    assert_owner_or_admin(op, current)
     log_event(db, current.id, "oportunidade", op.id, "excluiu", {"titulo": op.titulo})
     soft_delete(db, current.id, op)
     db.commit()

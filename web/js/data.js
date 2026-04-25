@@ -286,4 +286,12 @@
 
   window.DATA = MOCK;
   window.API = { auth, api, login, refresh, loadAll };
+
+  // ===== Permissões helpers =====
+  window.PERM = {
+    isReadonly: () => (window.DATA?.CURRENT_USER?.role || '') === 'leitor',
+    canSeeAll: () => ['admin','gestor','leitor'].includes(window.DATA?.CURRENT_USER?.role || ''),
+    isAdmin:    () => (window.DATA?.CURRENT_USER?.role || '') === 'admin',
+    isAdminOrGestor: () => ['admin','gestor'].includes(window.DATA?.CURRENT_USER?.role || ''),
+  };
 })();
