@@ -322,6 +322,10 @@ def listar_contatos_empresa(empresa_id: int, db: DBSession, _: CurrentUser):
 
 @router.get("/{empresa_id}/timeline")
 def empresa_timeline(empresa_id: int, db: DBSession, _: CurrentUser, limit: int = 50):
+    from app.models.historico import Historico
+    from app.models.oportunidade import Oportunidade
+    from app.models.user import User as _User
+
     empresa = db.get(Empresa, empresa_id)
     if not empresa:
         raise HTTPException(status_code=404, detail="Empresa não encontrada")
@@ -339,11 +343,38 @@ def empresa_timeline(empresa_id: int, db: DBSession, _: CurrentUser, limit: int 
         .limit(limit)
         .all()
     )
+    # Histórico das oportunidades dessa empresa
+    op_ids = [r[0] for r in db.query(Oportunidade.id).filter(Oportunidade.empresa_id == empresa_id).all()]
+    historico_rows = []
+    if op_ids:
+        historico_rows = (
+            db.query(Historico)
+            .filter(Historico.entity_type == "oportunidade", Historico.entity_id.in_(op_ids))
+            .order_by(Historico.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+    user_ids = {h.user_id for h in historico_rows if h.user_id}
+    users = {u.id: u for u in db.query(_User).filter(_User.id.in_(user_ids)).all()} if user_ids else {}
+
     items = []
     for a in atividades:
         items.append({"kind": "atividade", "id": a.id, "data": AtividadeOut.model_validate(a).model_dump(), "ts": a.data_atividade or a.created_at})
     for n in notas:
         items.append({"kind": "nota", "id": n.id, "data": NotaOut.model_validate(n).model_dump(), "ts": n.created_at})
+    for h in historico_rows:
+        items.append({
+            "kind": "historico",
+            "id": h.id,
+            "data": {
+                "entity_type": h.entity_type,
+                "entity_id": h.entity_id,
+                "acao": h.acao,
+                "changes": h.changes,
+                "user_nome": users.get(h.user_id).nome if h.user_id and users.get(h.user_id) else None,
+            },
+            "ts": h.created_at,
+        })
     items.sort(key=lambda x: x["ts"], reverse=True)
     return items[:limit]
 

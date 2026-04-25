@@ -6,6 +6,7 @@ from app.core.deps import CurrentUser, DBSession
 from app.models.oportunidade import Oportunidade
 from app.models.proposta import Proposta, PropostaStatus
 from app.schemas.proposta import PropostaCreate, PropostaOut, PropostaUpdate
+from app.services.historico import log_event
 
 router = APIRouter()
 
@@ -40,18 +41,22 @@ def create_proposta(payload: PropostaCreate, db: DBSession, current: CurrentUser
         raise HTTPException(status_code=400, detail="Oportunidade inexistente")
     p = Proposta(**payload.model_dump(), created_by_id=current.id)
     db.add(p)
+    db.flush()
+    log_event(db, current.id, "proposta", p.id, "criou",
+              {"titulo": p.titulo, "valor_total": p.valor_total, "oportunidade_id": p.oportunidade_id})
     db.commit()
     db.refresh(p)
     return p
 
 
 @router.patch("/{proposta_id}", response_model=PropostaOut)
-def update_proposta(proposta_id: int, payload: PropostaUpdate, db: DBSession, _: CurrentUser):
+def update_proposta(proposta_id: int, payload: PropostaUpdate, db: DBSession, current: CurrentUser):
     p = db.get(Proposta, proposta_id)
     if not p:
         raise HTTPException(status_code=404, detail="Proposta não encontrada")
     data = payload.model_dump(exclude_unset=True)
     new_status = data.get("status")
+    before_status = p.status
     for k, v in data.items():
         setattr(p, k, v)
     if new_status == PropostaStatus.enviada and p.enviada_em is None:
@@ -60,15 +65,21 @@ def update_proposta(proposta_id: int, payload: PropostaUpdate, db: DBSession, _:
         p.aceita_em = datetime.now(timezone.utc)
     if new_status == PropostaStatus.rejeitada and p.rejeitada_em is None:
         p.rejeitada_em = datetime.now(timezone.utc)
+    if new_status and before_status != p.status:
+        log_event(db, current.id, "proposta", p.id, f"status_{p.status.value}",
+                  {"de": before_status.value, "para": p.status.value, "motivo": getattr(p, "motivo_rejeicao", None)})
+    elif data:
+        log_event(db, current.id, "proposta", p.id, "atualizou", {"campos": list(data.keys())})
     db.commit()
     db.refresh(p)
     return p
 
 
 @router.delete("/{proposta_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_proposta(proposta_id: int, db: DBSession, _: CurrentUser):
+def delete_proposta(proposta_id: int, db: DBSession, current: CurrentUser):
     p = db.get(Proposta, proposta_id)
     if not p:
         raise HTTPException(status_code=404, detail="Proposta não encontrada")
+    log_event(db, current.id, "proposta", p.id, "excluiu", {"titulo": p.titulo})
     db.delete(p)
     db.commit()

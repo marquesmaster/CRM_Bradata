@@ -7,6 +7,7 @@ from app.core.deps import CurrentUser, DBSession
 from app.models.atividade import Atividade, AtividadeStatus, TipoAtividade
 from app.schemas.atividade import AtividadeCreate, AtividadeOut, AtividadeUpdate
 from app.schemas.common import Page
+from app.services.historico import log_event
 
 router = APIRouter()
 
@@ -66,31 +67,42 @@ def create_atividade(payload: AtividadeCreate, db: DBSession, current: CurrentUs
     if at.status == AtividadeStatus.concluida and at.concluida_em is None:
         at.concluida_em = datetime.now(timezone.utc)
     db.add(at)
+    db.flush()
+    log_event(db, current.id, "atividade", at.id, "criou", {
+        "tipo": at.tipo.value, "titulo": at.titulo, "due_date": str(at.due_date) if at.due_date else None,
+    })
     db.commit()
     db.refresh(at)
     return at
 
 
 @router.patch("/{atividade_id}", response_model=AtividadeOut)
-def update_atividade(atividade_id: int, payload: AtividadeUpdate, db: DBSession, _: CurrentUser):
+def update_atividade(atividade_id: int, payload: AtividadeUpdate, db: DBSession, current: CurrentUser):
     at = db.get(Atividade, atividade_id)
     if not at:
         raise HTTPException(status_code=404, detail="Atividade não encontrada")
     data = payload.model_dump(exclude_unset=True)
     new_status = data.get("status")
+    before_status = at.status
     for k, v in data.items():
         setattr(at, k, v)
     if new_status == AtividadeStatus.concluida and at.concluida_em is None:
         at.concluida_em = datetime.now(timezone.utc)
+    if new_status and before_status != at.status:
+        log_event(db, current.id, "atividade", at.id, f"status_{at.status.value}",
+                  {"de": before_status.value, "para": at.status.value})
+    elif data:
+        log_event(db, current.id, "atividade", at.id, "atualizou", {"campos": list(data.keys())})
     db.commit()
     db.refresh(at)
     return at
 
 
 @router.delete("/{atividade_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_atividade(atividade_id: int, db: DBSession, _: CurrentUser):
+def delete_atividade(atividade_id: int, db: DBSession, current: CurrentUser):
     at = db.get(Atividade, atividade_id)
     if not at:
         raise HTTPException(status_code=404, detail="Atividade não encontrada")
+    log_event(db, current.id, "atividade", at.id, "excluiu", {"titulo": at.titulo})
     db.delete(at)
     db.commit()

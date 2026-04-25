@@ -13,6 +13,7 @@ from app.schemas.oportunidade import (
     OportunidadeOut,
     OportunidadeUpdate,
 )
+from app.services.historico import log_event
 
 router = APIRouter()
 
@@ -65,13 +66,17 @@ def create_oportunidade(payload: OportunidadeCreate, db: DBSession, current: Cur
     if op.owner_id is None:
         op.owner_id = current.id
     db.add(op)
+    db.flush()
+    log_event(db, current.id, "oportunidade", op.id, "criou", {
+        "titulo": op.titulo, "valor_estimado": op.valor_estimado, "estagio_id": op.estagio_id,
+    })
     db.commit()
     db.refresh(op)
     return op
 
 
 @router.patch("/{op_id}", response_model=OportunidadeOut)
-def update_oportunidade(op_id: int, payload: OportunidadeUpdate, db: DBSession, _: CurrentUser):
+def update_oportunidade(op_id: int, payload: OportunidadeUpdate, db: DBSession, current: CurrentUser):
     op = db.get(Oportunidade, op_id)
     if not op:
         raise HTTPException(status_code=404, detail="Oportunidade não encontrada")
@@ -80,15 +85,27 @@ def update_oportunidade(op_id: int, payload: OportunidadeUpdate, db: DBSession, 
         estagio = db.get(PipelineEstagio, data["estagio_id"])
         if not estagio or estagio.pipeline_id != op.pipeline_id:
             raise HTTPException(status_code=400, detail="Estágio inválido para o pipeline")
+    before_estagio = op.estagio_id
+    before_owner = op.owner_id
     for k, v in data.items():
         setattr(op, k, v)
+    # Loga mudança de estágio em separado (mais visível)
+    if "estagio_id" in data and before_estagio != op.estagio_id:
+        log_event(db, current.id, "oportunidade", op.id, "mudou_estagio",
+                  {"de_estagio_id": before_estagio, "para_estagio_id": op.estagio_id})
+    elif "owner_id" in data and before_owner != op.owner_id:
+        log_event(db, current.id, "oportunidade", op.id, "reatribuiu",
+                  {"de_owner_id": before_owner, "para_owner_id": op.owner_id})
+    elif data:
+        log_event(db, current.id, "oportunidade", op.id, "atualizou",
+                  {"campos": list(data.keys())})
     db.commit()
     db.refresh(op)
     return op
 
 
 @router.post("/{op_id}/fechar", response_model=OportunidadeOut)
-def fechar_oportunidade(op_id: int, payload: OportunidadeCloseRequest, db: DBSession, _: CurrentUser):
+def fechar_oportunidade(op_id: int, payload: OportunidadeCloseRequest, db: DBSession, current: CurrentUser):
     op = db.get(Oportunidade, op_id)
     if not op:
         raise HTTPException(status_code=404, detail="Oportunidade não encontrada")
@@ -97,15 +114,19 @@ def fechar_oportunidade(op_id: int, payload: OportunidadeCloseRequest, db: DBSes
     op.status = payload.status
     op.motivo_perda = payload.motivo_perda
     op.data_fechamento_real = date.today()
+    log_event(db, current.id, "oportunidade", op.id,
+              "fechou_ganha" if payload.status == OportunidadeStatus.ganha else "fechou_perdida",
+              {"motivo": payload.motivo_perda, "valor": op.valor_estimado})
     db.commit()
     db.refresh(op)
     return op
 
 
 @router.delete("/{op_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_oportunidade(op_id: int, db: DBSession, _: CurrentUser):
+def delete_oportunidade(op_id: int, db: DBSession, current: CurrentUser):
     op = db.get(Oportunidade, op_id)
     if not op:
         raise HTTPException(status_code=404, detail="Oportunidade não encontrada")
+    log_event(db, current.id, "oportunidade", op.id, "excluiu", {"titulo": op.titulo})
     db.delete(op)
     db.commit()
