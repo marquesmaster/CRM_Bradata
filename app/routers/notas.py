@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from app.core.deps import CurrentUser, DBSession
 from app.models.nota import Nota
 from app.schemas.nota import NotaCreate, NotaOut
+from app.services.soft_delete import soft_delete, filter_active
 
 router = APIRouter()
 
@@ -17,7 +18,7 @@ def list_notas(
     lead_id: int | None = None,
     limit: int = Query(100, ge=1, le=500),
 ):
-    query = db.query(Nota)
+    query = filter_active(db.query(Nota), Nota)
     if empresa_id:
         query = query.filter(Nota.empresa_id == empresa_id)
     if oportunidade_id:
@@ -45,5 +46,5 @@ def delete_nota(nota_id: int, db: DBSession, current: CurrentUser):
         raise HTTPException(status_code=404, detail="Nota não encontrada")
     if nota.user_id != current.id:
         raise HTTPException(status_code=403, detail="Apenas o autor pode remover a nota")
-    db.delete(nota)
+    soft_delete(db, current.id, nota)
     db.commit()

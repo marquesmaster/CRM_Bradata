@@ -13,6 +13,7 @@ from app.schemas.common import Page
 from app.schemas.contato import ContatoCreate, ContatoOut, ContatoUpdate
 from app.services import google_oauth as gauth
 from app.services.smtp import SMTPError, enviar_email, render_template
+from app.services.soft_delete import soft_delete, restore, filter_active
 
 router = APIRouter()
 
@@ -49,10 +50,13 @@ def list_contatos(
     sector: str | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
+    include_deleted: bool = False,
 ):
     """Lista global de contatos com filtros — para escolher por empresa+cargo."""
     from sqlalchemy import or_
     query = db.query(Contato).join(Empresa, Empresa.id == Contato.empresa_id, isouter=True)
+    if not include_deleted:
+        query = filter_active(query, Contato)
     if q:
         like = f"%{q}%"
         query = query.filter(or_(Contato.nome.ilike(like), Contato.email.ilike(like)))
@@ -154,12 +158,23 @@ def update_contato(contato_id: int, payload: ContatoUpdate, db: DBSession, _: Cu
 
 
 @router.delete("/{contato_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_contato(contato_id: int, db: DBSession, _: CurrentUser):
+def delete_contato(contato_id: int, db: DBSession, current: CurrentUser):
     c = db.get(Contato, contato_id)
     if not c:
         raise HTTPException(status_code=404, detail="Contato não encontrado")
-    db.delete(c)
+    soft_delete(db, current.id, c)
     db.commit()
+
+
+@router.post("/{contato_id}/restore", response_model=ContatoOut)
+def restore_contato(contato_id: int, db: DBSession, _: CurrentUser):
+    c = db.get(Contato, contato_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Contato não encontrado")
+    restore(c)
+    db.commit()
+    db.refresh(c)
+    return c
 
 
 def _build_render_vars(c: Contato, empresa: Empresa | None, current, extra: dict | None) -> dict:

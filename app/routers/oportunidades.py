@@ -16,6 +16,7 @@ from app.schemas.oportunidade import (
 from app.models.notification import NotificationKind
 from app.services.historico import log_event
 from app.services import notify
+from app.services.soft_delete import soft_delete, filter_active
 
 router = APIRouter()
 
@@ -31,8 +32,11 @@ def list_oportunidades(
     empresa_id: int | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
+    include_deleted: bool = False,
 ):
     query = db.query(Oportunidade)
+    if not include_deleted:
+        query = filter_active(query, Oportunidade)
     if status_:
         query = query.filter(Oportunidade.status == status_)
     if pipeline_id:
@@ -152,5 +156,18 @@ def delete_oportunidade(op_id: int, db: DBSession, current: CurrentUser):
     if not op:
         raise HTTPException(status_code=404, detail="Oportunidade não encontrada")
     log_event(db, current.id, "oportunidade", op.id, "excluiu", {"titulo": op.titulo})
-    db.delete(op)
+    soft_delete(db, current.id, op)
     db.commit()
+
+
+@router.post("/{op_id}/restore", response_model=OportunidadeOut)
+def restore_oportunidade(op_id: int, db: DBSession, current: CurrentUser):
+    from app.services.soft_delete import restore
+    op = db.get(Oportunidade, op_id)
+    if not op:
+        raise HTTPException(status_code=404, detail="Oportunidade não encontrada")
+    restore(op)
+    log_event(db, current.id, "oportunidade", op.id, "restaurou", None)
+    db.commit()
+    db.refresh(op)
+    return op

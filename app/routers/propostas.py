@@ -9,6 +9,7 @@ from app.schemas.proposta import PropostaCreate, PropostaOut, PropostaUpdate
 from app.models.notification import NotificationKind
 from app.services.historico import log_event
 from app.services import notify
+from app.services.soft_delete import soft_delete, restore, filter_active
 
 router = APIRouter()
 
@@ -20,8 +21,11 @@ def list_propostas(
     oportunidade_id: int | None = None,
     status_: PropostaStatus | None = Query(None, alias="status"),
     limit: int = Query(100, ge=1, le=500),
+    include_deleted: bool = False,
 ):
     q = db.query(Proposta)
+    if not include_deleted:
+        q = filter_active(q, Proposta)
     if oportunidade_id:
         q = q.filter(Proposta.oportunidade_id == oportunidade_id)
     if status_:
@@ -99,5 +103,17 @@ def delete_proposta(proposta_id: int, db: DBSession, current: CurrentUser):
     if not p:
         raise HTTPException(status_code=404, detail="Proposta não encontrada")
     log_event(db, current.id, "proposta", p.id, "excluiu", {"titulo": p.titulo})
-    db.delete(p)
+    soft_delete(db, current.id, p)
     db.commit()
+
+
+@router.post("/{proposta_id}/restore", response_model=PropostaOut)
+def restore_proposta(proposta_id: int, db: DBSession, current: CurrentUser):
+    p = db.get(Proposta, proposta_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Proposta não encontrada")
+    restore(p)
+    log_event(db, current.id, "proposta", p.id, "restaurou", None)
+    db.commit()
+    db.refresh(p)
+    return p

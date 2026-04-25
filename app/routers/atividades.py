@@ -10,6 +10,7 @@ from app.schemas.common import Page
 from app.models.notification import NotificationKind
 from app.services.historico import log_event
 from app.services import notify
+from app.services.soft_delete import soft_delete, restore, filter_active
 
 router = APIRouter()
 
@@ -28,8 +29,11 @@ def list_atividades(
     overdue: bool = False,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
+    include_deleted: bool = False,
 ):
     query = db.query(Atividade)
+    if not include_deleted:
+        query = filter_active(query, Atividade)
     if empresa_id:
         query = query.filter(Atividade.empresa_id == empresa_id)
     if oportunidade_id:
@@ -112,5 +116,17 @@ def delete_atividade(atividade_id: int, db: DBSession, current: CurrentUser):
     if not at:
         raise HTTPException(status_code=404, detail="Atividade não encontrada")
     log_event(db, current.id, "atividade", at.id, "excluiu", {"titulo": at.titulo})
-    db.delete(at)
+    soft_delete(db, current.id, at)
     db.commit()
+
+
+@router.post("/{atividade_id}/restore", response_model=AtividadeOut)
+def restore_atividade(atividade_id: int, db: DBSession, current: CurrentUser):
+    at = db.get(Atividade, atividade_id)
+    if not at:
+        raise HTTPException(status_code=404, detail="Atividade não encontrada")
+    restore(at)
+    log_event(db, current.id, "atividade", at.id, "restaurou", None)
+    db.commit()
+    db.refresh(at)
+    return at

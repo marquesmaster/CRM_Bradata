@@ -14,7 +14,9 @@ from app.schemas.empresa import EmpresaCreate, EmpresaOut, EmpresaUpdate
 from app.schemas.nota import NotaOut
 from app.services.cnpj_ws import enrich_empresa_from_cnpjws
 from app.services.empresa_service import classify_icp
+from app.services.historico import log_event
 from app.services.lusha import enriquecer_empresa as lusha_enriquecer, LushaError
+from app.services.soft_delete import soft_delete, restore, filter_active
 
 router = APIRouter()
 
@@ -94,8 +96,11 @@ def list_empresas(
     sector: str | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
+    include_deleted: bool = False,
 ):
     query = db.query(Empresa)
+    if not include_deleted:
+        query = filter_active(query, Empresa)
     filters = []
     if q:
         like = f"%{q}%"
@@ -165,12 +170,25 @@ def update_empresa(empresa_id: int, payload: EmpresaUpdate, db: DBSession, _: Cu
 
 
 @router.delete("/{empresa_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_empresa(empresa_id: int, db: DBSession, _: CurrentUser):
+def delete_empresa(empresa_id: int, db: DBSession, current: CurrentUser):
     empresa = db.get(Empresa, empresa_id)
     if not empresa:
         raise HTTPException(status_code=404, detail="Empresa não encontrada")
-    db.delete(empresa)
+    log_event(db, current.id, "empresa", empresa.id, "excluiu", {"razao_social": empresa.razao_social, "cnpj": empresa.cnpj})
+    soft_delete(db, current.id, empresa)
     db.commit()
+
+
+@router.post("/{empresa_id}/restore", response_model=EmpresaOut)
+def restore_empresa(empresa_id: int, db: DBSession, current: CurrentUser):
+    empresa = db.get(Empresa, empresa_id)
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+    restore(empresa)
+    log_event(db, current.id, "empresa", empresa.id, "restaurou", None)
+    db.commit()
+    db.refresh(empresa)
+    return _serialize(db, empresa)
 
 
 @router.post("/{empresa_id}/enriquecer", response_model=EmpresaOut)
