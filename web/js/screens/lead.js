@@ -6,6 +6,8 @@ function LeadDetail({ companyId, onBack }) {
   const [enriching, setEnriching] = React.useState(false);
   const [enrichMsg, setEnrichMsg] = React.useState(null);
   const [emailFor, setEmailFor] = React.useState(null);   // contato selecionado para envio
+  const [timeline, setTimeline] = React.useState([]);
+  const [loadingTl, setLoadingTl] = React.useState(false);
 
   const loadContatos = React.useCallback(() => {
     if (!c?.id) return;
@@ -15,6 +17,15 @@ function LeadDetail({ companyId, onBack }) {
       .catch(() => setLoadingC(false));
   }, [c?.id]);
   React.useEffect(loadContatos, [loadContatos]);
+
+  const loadTimeline = React.useCallback(() => {
+    if (!c?.id) return;
+    setLoadingTl(true);
+    window.API.api(`/empresas/${c.id}/timeline?limit=80`)
+      .then(items => { setTimeline(items || []); setLoadingTl(false); })
+      .catch(() => setLoadingTl(false));
+  }, [c?.id]);
+  React.useEffect(loadTimeline, [loadTimeline]);
 
   if (!c) {
     return (
@@ -218,6 +229,9 @@ function LeadDetail({ companyId, onBack }) {
               </table>
             </div>
           )}
+
+          {/* Timeline 360° */}
+          <TimelinePanel items={timeline} loading={loadingTl} onReload={loadTimeline}/>
         </div>
 
         <div style={{display:'flex', flexDirection:'column', gap:'var(--gap)'}}>
@@ -378,5 +392,129 @@ function Info({ label, value, hot }) {
   );
 }
 
+function TimelinePanel({ items, loading, onReload }) {
+  return (
+    <div className="card">
+      <div className="card-head">
+        <div>
+          <div className="card-title">Timeline 360°</div>
+          <div className="card-sub">Tudo que aconteceu — atividades, notas, oportunidades</div>
+        </div>
+        <button className="btn btn-xs btn-ghost" onClick={onReload}><I.refresh size={10}/></button>
+      </div>
+      <div className="card-p" style={{padding:0}}>
+        {loading && <div style={{padding:20, textAlign:'center'}} className="muted">Carregando…</div>}
+        {!loading && items.length === 0 && (
+          <div style={{padding:24, textAlign:'center'}} className="muted">Nenhum evento ainda.</div>
+        )}
+        {!loading && items.map((ev, i) => <TimelineRow key={`${ev.kind}-${ev.id}-${i}`} ev={ev}/>)}
+      </div>
+    </div>
+  );
+}
+
+function TimelineRow({ ev }) {
+  const { fmt } = window.DATA;
+  const ts = new Date(ev.ts);
+  const dateStr = ts.toLocaleString('pt-BR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+
+  let icon, color, title, body;
+  if (ev.kind === 'atividade') {
+    const d = ev.data;
+    const tipoIcon = { ligacao:'phone', email:'mail', reuniao:'users', whatsapp:'phone', visita:'building', linkedin:'linkedin', tarefa:'check', outro:'sparkle' };
+    icon = I[tipoIcon[d.tipo] || 'check'];
+    color = d.status === 'concluida' ? 'hsl(var(--success))' :
+            d.prioridade === 'alta' || d.prioridade === 'urgente' ? 'hsl(var(--danger))' :
+            'hsl(var(--info))';
+    title = d.titulo;
+    body = (
+      <>
+        <span className="chip" style={{fontSize:10, padding:'1px 5px'}}>{d.tipo}</span>
+        <span className="chip" style={{fontSize:10, padding:'1px 5px',
+          background: d.status === 'concluida' ? 'hsl(var(--success-soft))' : 'hsl(var(--surface-2))',
+          color: d.status === 'concluida' ? 'hsl(var(--success))' : 'inherit'}}>{d.status}</span>
+        {d.descricao && <span className="muted" style={{fontSize:11.5}}>{d.descricao.slice(0, 120)}</span>}
+      </>
+    );
+  } else if (ev.kind === 'nota') {
+    const d = ev.data;
+    icon = I.doc;
+    color = 'hsl(var(--warning))';
+    title = 'Nota adicionada';
+    body = <span style={{fontSize:12}}>{(d.texto || d.conteudo || '').slice(0, 200)}</span>;
+  } else if (ev.kind === 'historico') {
+    const d = ev.data;
+    icon = d.acao.startsWith('fechou_ganha') ? I.check :
+           d.acao.startsWith('fechou_perdida') ? I.x :
+           d.acao.includes('estagio') ? I.kanban : I.sparkle;
+    color = d.acao.includes('ganha') ? 'hsl(var(--success))' :
+            d.acao.includes('perdida') || d.acao.includes('excluiu') ? 'hsl(var(--danger))' :
+            'hsl(var(--b-accent))';
+    title = formatHistoricoAcao(d.acao, d.entity_type);
+    const changes = d.changes || {};
+    const parts = [];
+    if (changes.titulo) parts.push(`"${changes.titulo}"`);
+    if (changes.valor || changes.valor_estimado) parts.push(fmt.brlK(changes.valor || changes.valor_estimado));
+    if (changes.motivo) parts.push(`motivo: ${changes.motivo}`);
+    if (changes.de_estagio_id != null && changes.para_estagio_id != null) {
+      const stages = window.DATA.STAGES;
+      const de = stages.find(s => String(s.id) === String(changes.de_estagio_id))?.label || changes.de_estagio_id;
+      const para = stages.find(s => String(s.id) === String(changes.para_estagio_id))?.label || changes.para_estagio_id;
+      parts.push(`${de} → ${para}`);
+    }
+    if (changes.campos) parts.push(changes.campos.join(', '));
+    body = (
+      <>
+        {d.user_nome && <span className="muted" style={{fontSize:11.5}}>{d.user_nome}</span>}
+        {parts.length > 0 && <span className="mono" style={{fontSize:11.5}}>{parts.join(' · ')}</span>}
+      </>
+    );
+  } else {
+    icon = I.sparkle; color = 'hsl(var(--fg-muted))'; title = ev.kind; body = null;
+  }
+
+  return (
+    <div style={{display:'grid', gridTemplateColumns:'32px 1fr auto', gap:12, padding:'14px 24px', borderBottom:'1px solid hsl(var(--border))'}}>
+      <div style={{
+        width:32, height:32, borderRadius:'50%', background:`${color}22`, color,
+        display:'grid', placeItems:'center', flex:'0 0 auto',
+      }}>
+        {React.createElement(icon, { size: 14 })}
+      </div>
+      <div style={{minWidth:0}}>
+        <div style={{fontSize:13, fontWeight:600, marginBottom:3}}>{title}</div>
+        <div className="row" style={{gap:8, flexWrap:'wrap', alignItems:'center'}}>{body}</div>
+      </div>
+      <div className="muted" style={{fontSize:11, textAlign:'right', whiteSpace:'nowrap'}}>{dateStr}</div>
+    </div>
+  );
+}
+
+function formatHistoricoAcao(acao, entity_type) {
+  const map = {
+    'criou': 'Oportunidade criada',
+    'mudou_estagio': 'Mudou de estágio',
+    'reatribuiu': 'Reatribuída',
+    'atualizou': 'Editada',
+    'fechou_ganha': '🎉 Fechada como GANHA',
+    'fechou_perdida': 'Fechada como perdida',
+    'excluiu': 'Excluída',
+    'status_concluida': 'Atividade concluída',
+    'status_cancelada': 'Atividade cancelada',
+    'status_em_andamento': 'Em andamento',
+    'status_pendente': 'Rependente',
+    'status_enviada': 'Proposta enviada',
+    'status_aceita': '✓ Proposta aceita',
+    'status_rejeitada': 'Proposta rejeitada',
+    'status_em_analise': 'Em análise',
+    'status_expirada': 'Expirada',
+  };
+  const t = entity_type === 'oportunidade' ? '' :
+            entity_type === 'proposta' ? 'Proposta: ' :
+            entity_type === 'atividade' ? 'Atividade: ' : '';
+  return t + (map[acao] || acao);
+}
+
 window.LeadDetail = LeadDetail;
 window.EmailModal = EmailModal;
+window.TimelinePanel = TimelinePanel;
