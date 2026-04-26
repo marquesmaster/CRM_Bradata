@@ -198,26 +198,8 @@ function LeadDetail({ companyId, onBack }) {
 
       <div className="grid-dash">
         <div style={{display:'flex', flexDirection:'column', gap:'var(--gap)'}}>
-          {/* Perfil enriquecido */}
-          <div className="card">
-            <div className="card-head"><div className="card-title">Perfil enriquecido</div><span className="chip success"><I.check size={10}/>CNPJ.ws</span></div>
-            <div className="card-p" style={{display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:20}}>
-              <Info label="Faturamento" value={fmt.brlK(c.revenue)} hot={c.revenue >= 100_000_000}/>
-              <Info label="Funcionários" value={fmt.num(c.employees)}/>
-              <Info label="Setor" value={c.sector}/>
-              <Info label="Contratos PNCP" value={c.contractsPncp}/>
-              <Info label="Ativos em Governo" value={c.ativosGov}/>
-              <Info label="Ticket médio" value={fmt.brlK(c.ticketMedio)}/>
-            </div>
-            {(c.stack || []).length > 0 && (
-              <div style={{padding:'0 24px 20px'}}>
-                <div className="card-section-title">Stack técnica</div>
-                <div className="row" style={{gap:6, flexWrap:'wrap'}}>
-                  {(c.stack||[]).map(s => <span key={s} className="chip primary">{s}</span>)}
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Dados da empresa (FornecedorInfoCard) */}
+          <FornecedorInfoCard full={full} c={c}/>
 
           {/* Contatos */}
           <div className="card">
@@ -1020,6 +1002,189 @@ function ContractsAnalysisGrid({ full }) {
 }
 
 // =================================================================
+// FornecedorInfoCard — Dados da Empresa (CNPJ, contato, endereço,
+// info, atividade econômica, dados fiscais, sócios collapsible)
+// =================================================================
+function FornecedorInfoCard({ full, c }) {
+  const { fmt } = window.DATA;
+  const [showSocios, setShowSocios] = React.useState(false);
+  if (!full) return null;
+  const enriched = full.dados_enriquecidos;
+
+  const Section = ({ title, children, icon }) => (
+    <div style={{padding:'14px 0', borderBottom:'1px solid hsl(var(--border))'}}>
+      <div className="card-section-title" style={{display:'flex', alignItems:'center', gap:6, marginBottom:8}}>
+        {icon && React.createElement(icon, {size:11})}{title}
+      </div>
+      {children}
+    </div>
+  );
+
+  const Field = ({ label, value, mono, span }) => (
+    <div style={{minWidth:0, gridColumn: span ? `span ${span}` : undefined}}>
+      <div className="card-section-title" style={{marginBottom:2}}>{label}</div>
+      <div style={{
+        fontSize:13, fontWeight:500, color:'hsl(var(--fg))',
+        fontFamily: mono ? 'JetBrains Mono, monospace' : 'inherit',
+        wordBreak: 'break-word',
+      }}>{value || <span className="muted">—</span>}</div>
+    </div>
+  );
+
+  const cnaeSec = full.atividades_secundarias || [];
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <div className="card-title" style={{display:'flex', alignItems:'center', gap:8}}>
+          <I.building size={14}/>Dados da Empresa
+        </div>
+        <div className="row" style={{gap:6}}>
+          <span className="chip" style={{fontSize:10}}>{full.status}</span>
+          {enriched && <span className="chip success" style={{fontSize:10}}><I.check size={10}/>CNPJ.ws</span>}
+        </div>
+      </div>
+      <div style={{padding:'0 var(--card-p)'}}>
+
+        {/* Identificação */}
+        <Section title="Identificação">
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:14}}>
+            <Field label="CNPJ" value={fmt.cnpj(full.cnpj)} mono/>
+            <Field label="Razão Social" value={full.razao_social} span={2}/>
+            <Field label="Nome Fantasia" value={full.nome_fantasia}/>
+          </div>
+        </Section>
+
+        {/* Contato */}
+        <Section title="Contato" icon={I.phone}>
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:14}}>
+            <Field label="Telefone" value={full.telefone} mono/>
+            <Field label="E-mail" value={full.email} mono/>
+            <Field label="Website" value={full.website ? <a href={`https://${full.website}`} target="_blank" rel="noreferrer" style={{color:'hsl(var(--b-accent))'}}>{full.website}</a> : null}/>
+            <Field label="LinkedIn" value={full.linkedin ? <a href={full.linkedin} target="_blank" rel="noreferrer" style={{color:'hsl(var(--b-accent))'}}>Ver perfil</a> : null}/>
+          </div>
+        </Section>
+
+        {/* Endereço */}
+        <Section title="Endereço" icon={I.target}>
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))', gap:14}}>
+            <Field label="Logradouro" value={full.endereco} span={2}/>
+            <Field label="Cidade / UF" value={full.cidade && full.estado ? `${full.cidade} - ${full.estado}` : (full.cidade || full.estado)}/>
+            <Field label="CEP" value={full.cep} mono/>
+          </div>
+        </Section>
+
+        {/* Informações da Empresa */}
+        {enriched && (full.porte || full.natureza_juridica || full.situacao_cadastral) && (
+          <Section title="Informações da Empresa" icon={I.briefcase}>
+            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:14}}>
+              <Field label="Porte" value={full.porte}/>
+              <Field label="Natureza Jurídica" value={full.natureza_juridica}/>
+              <Field label="Situação" value={
+                full.situacao_cadastral
+                  ? <span className={`chip ${full.situacao_cadastral.toLowerCase()==='ativa' ? 'success' : 'danger'}`} style={{fontSize:10.5}}>
+                      {full.situacao_cadastral}
+                    </span>
+                  : null
+              }/>
+            </div>
+          </Section>
+        )}
+
+        {/* Atividade Econômica */}
+        {enriched && (full.setor || full.atividade_principal_codigo) && (
+          <Section title="Atividade Econômica" icon={I.target}>
+            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:14}}>
+              <Field label="Setor" value={full.setor}/>
+              <Field label="CNAE Principal" value={
+                full.atividade_principal_codigo
+                  ? <><span className="mono">{full.atividade_principal_codigo}</span>{full.atividade_principal && <div className="muted" style={{fontSize:11.5, marginTop:2}}>{full.atividade_principal}</div>}</>
+                  : null
+              } span={2}/>
+            </div>
+            {cnaeSec.length > 0 && (
+              <div style={{marginTop:12}}>
+                <div className="card-section-title" style={{marginBottom:6}}>Atividades Secundárias ({cnaeSec.length})</div>
+                <div style={{maxHeight:120, overflowY:'auto', display:'flex', flexDirection:'column', gap:4}}>
+                  {cnaeSec.slice(0, 8).map((a, i) => (
+                    <div key={i} style={{fontSize:11.5, lineHeight:1.5}}>
+                      <span className="mono muted">{a.codigo}</span>
+                      {a.descricao && <span style={{marginLeft:6}}>{a.descricao}</span>}
+                    </div>
+                  ))}
+                  {cnaeSec.length > 8 && <span className="muted" style={{fontSize:11}}>+{cnaeSec.length - 8} mais</span>}
+                </div>
+              </div>
+            )}
+          </Section>
+        )}
+
+        {/* Dados Fiscais */}
+        {enriched && (full.capital_social || full.regime_tributario || full.faixa_faturamento || full.data_abertura) && (
+          <Section title="Dados Fiscais" icon={I.money}>
+            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:14}}>
+              <Field label="Capital Social" value={full.capital_social ? fmt.brlK(full.capital_social) : null}/>
+              <Field label="Faixa de Faturamento" value={full.faixa_faturamento}/>
+              <Field label="Regime Tributário" value={full.regime_tributario}/>
+              <Field label="Data de Abertura" value={full.data_abertura ? new Date(full.data_abertura).toLocaleDateString('pt-BR') : null}/>
+            </div>
+          </Section>
+        )}
+
+        {/* Sócios collapsible */}
+        {full.socios && full.socios.length > 0 && (
+          <div style={{padding:'14px 0', borderBottom:'1px solid hsl(var(--border))'}}>
+            <button
+              onClick={() => setShowSocios(s => !s)}
+              style={{
+                display:'flex', alignItems:'center', justifyContent:'space-between',
+                width:'100%', padding:0, background:'none', border:0, cursor:'pointer',
+              }}
+            >
+              <span className="card-section-title" style={{display:'flex', alignItems:'center', gap:6, margin:0}}>
+                <I.users size={11}/>Sócios ({full.socios.length})
+              </span>
+              <I.chevron size={11} style={{transform: showSocios ? 'rotate(90deg)' : 'rotate(0deg)', transition:'.15s', color:'hsl(var(--fg-muted))'}}/>
+            </button>
+            {showSocios ? (
+              <div style={{marginTop:10, display:'flex', flexDirection:'column', gap:8}}>
+                {full.socios.map((s, i) => (
+                  <div key={i} style={{borderLeft:'2px solid hsl(var(--b-accent) / .4)', paddingLeft:10}}>
+                    <div style={{fontSize:13, fontWeight:600}}>{s.nome}</div>
+                    {s.qualificacao && <div className="muted" style={{fontSize:11.5}}>{s.qualificacao}</div>}
+                    {(s.tipo || s.data_entrada) && (
+                      <div className="muted" style={{fontSize:10.5, marginTop:2}}>
+                        {s.tipo && <span>{s.tipo}</span>}
+                        {s.tipo && s.data_entrada && <span> · </span>}
+                        {s.data_entrada && <span>desde {new Date(s.data_entrada).toLocaleDateString('pt-BR')}</span>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{marginTop:8, fontSize:12.5, color:'hsl(var(--fg))'}}>
+                {full.socios[0].nome}
+                {full.socios.length > 1 && <span className="muted"> +{full.socios.length - 1} outros</span>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Fonte */}
+        {enriched && full.data_enriquecimento && (
+          <div className="muted" style={{fontSize:11, padding:'12px 0', display:'flex', alignItems:'center', gap:6}}>
+            <I.check size={11} style={{color:'hsl(var(--success))'}}/>
+            Atualizado via CNPJ.WS em {new Date(full.data_enriquecimento).toLocaleString('pt-BR', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'})}
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+// =================================================================
 // OriginChip — chip discreto que mostra de onde veio a empresa
 // =================================================================
 function OriginChip({ full }) {
@@ -1047,3 +1212,4 @@ window.CnpjSummaryCard = CnpjSummaryCard;
 window.ContractsKpiGrid = ContractsKpiGrid;
 window.ContractsAnalysisGrid = ContractsAnalysisGrid;
 window.OriginChip = OriginChip;
+window.FornecedorInfoCard = FornecedorInfoCard;
