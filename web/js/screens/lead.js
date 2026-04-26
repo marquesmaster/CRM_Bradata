@@ -457,11 +457,27 @@ function TimelinePanel({ items, loading, onReload, empresaId }) {
   const filtered = items.filter(ev => filter === 'all' || ev.kind === filter);
   const counts = items.reduce((acc, ev) => { acc[ev.kind] = (acc[ev.kind] || 0) + 1; return acc; }, {});
 
+  // Agrupa por mês (yyyy-MM)
+  const groupedByMonth = React.useMemo(() => {
+    const groups = new Map();
+    filtered.forEach(ev => {
+      const d = new Date(ev.ts);
+      if (isNaN(d.getTime())) return;
+      const key = d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(ev);
+    });
+    return groups;
+  }, [filtered]);
+
   return (
     <div className="card">
       <div className="card-head">
         <div>
-          <div className="card-title">Timeline 360°</div>
+          <div className="card-title" style={{display:'flex', alignItems:'center', gap:8}}>
+            <I.clock size={14}/>Timeline 360°
+            <span className="chip" style={{fontSize:10}}>{items.length}</span>
+          </div>
           <div className="card-sub">Tudo que aconteceu — atividades, notas, oportunidades</div>
         </div>
         <button className="btn btn-xs btn-ghost" onClick={onReload} title="Recarregar"><I.refresh size={10}/></button>
@@ -495,26 +511,49 @@ function TimelinePanel({ items, loading, onReload, empresaId }) {
         </div>
       </div>
 
-      {/* Filtros */}
+      {/* Filtros segmentados */}
       {items.length > 0 && (
-        <div style={{padding:'10px 24px', borderBottom:'1px solid hsl(var(--border))'}}>
-          <div className="segment-ctrl" style={{flexWrap:'wrap', gap:4}}>
+        <div style={{padding:'10px 24px', borderBottom:'1px solid hsl(var(--border))', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+          <I.target size={11} style={{color:'hsl(var(--fg-muted))'}}/>
+          <div className="segment-ctrl" style={{flexWrap:'wrap'}}>
             <button className={filter==='all'?'active':''} onClick={()=>setFilter('all')}>
               Todos <span style={{opacity:.6, marginLeft:4}}>{items.length}</span>
             </button>
-            {counts.atividade > 0 && <button className={filter==='atividade'?'active':''} onClick={()=>setFilter('atividade')}>Atividades {counts.atividade}</button>}
-            {counts.nota > 0 && <button className={filter==='nota'?'active':''} onClick={()=>setFilter('nota')}>Notas {counts.nota}</button>}
-            {counts.historico > 0 && <button className={filter==='historico'?'active':''} onClick={()=>setFilter('historico')}>Eventos {counts.historico}</button>}
+            {counts.atividade > 0 && <button className={filter==='atividade'?'active':''} onClick={()=>setFilter('atividade')}>Atividades <span style={{opacity:.6, marginLeft:4}}>{counts.atividade}</span></button>}
+            {counts.nota > 0 && <button className={filter==='nota'?'active':''} onClick={()=>setFilter('nota')}>Notas <span style={{opacity:.6, marginLeft:4}}>{counts.nota}</span></button>}
+            {counts.historico > 0 && <button className={filter==='historico'?'active':''} onClick={()=>setFilter('historico')}>Eventos <span style={{opacity:.6, marginLeft:4}}>{counts.historico}</span></button>}
           </div>
         </div>
       )}
 
-      <div style={{padding:0}}>
+      <div style={{padding:0, maxHeight:600, overflowY:'auto'}}>
         {loading && <div style={{padding:20, textAlign:'center'}} className="muted">Carregando…</div>}
         {!loading && filtered.length === 0 && (
-          <div style={{padding:24, textAlign:'center'}} className="muted">Nenhum evento ainda. Comece adicionando uma nota acima.</div>
+          <div style={{padding:24, textAlign:'center'}} className="muted">
+            Nenhum evento ainda. Comece adicionando uma nota acima.
+          </div>
         )}
-        {!loading && filtered.map((ev, i) => <TimelineRow key={`${ev.kind}-${ev.id}-${i}`} ev={ev}/>)}
+        {!loading && Array.from(groupedByMonth.entries()).map(([month, evs]) => (
+          <div key={month}>
+            <div style={{
+              position:'sticky', top:0, zIndex:1,
+              padding:'8px 24px',
+              background:'hsl(var(--surface-2, var(--surface)) / .95)',
+              backdropFilter:'blur(8px)',
+              borderBottom:'1px solid hsl(var(--border))',
+              fontSize:10, fontWeight:700,
+              textTransform:'uppercase', letterSpacing:'.08em',
+              color:'hsl(var(--fg-muted))',
+              display:'flex', justifyContent:'space-between', alignItems:'center',
+            }}>
+              <span>{month}</span>
+              <span className="muted" style={{fontWeight:500, letterSpacing:0, textTransform:'none'}}>
+                {evs.length} {evs.length === 1 ? 'evento' : 'eventos'}
+              </span>
+            </div>
+            {evs.map((ev, i) => <TimelineRow key={`${ev.kind}-${ev.id}-${i}`} ev={ev}/>)}
+          </div>
+        ))}
       </div>
     </div>
   );
