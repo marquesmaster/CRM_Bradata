@@ -247,25 +247,8 @@ function LeadDetail({ companyId, onBack }) {
           {/* Candidates Lusha (lista pré-revelação) */}
           <LushaCandidatesCard empresaId={c.id} onRevealed={loadContatos}/>
 
-          {/* Histórico PNCP */}
-          {contracts.length > 0 && (
-            <div className="card">
-              <div className="card-head"><div className="card-title">Histórico PNCP</div><span className="chip">{contracts.length} contratos · {fmt.brlK(totalPncp)}</span></div>
-              <table className="table">
-                <thead><tr><th>Órgão</th><th>Objeto</th><th>Valor</th><th>Publicado</th></tr></thead>
-                <tbody>
-                  {contracts.map(p => (
-                    <tr key={p.id}>
-                      <td><strong>{p.orgao}</strong><div className="muted mono" style={{fontSize:10}}>{p.numero}</div></td>
-                      <td style={{maxWidth:280, fontSize:12.5}}>{p.objeto}</td>
-                      <td><strong className="mono" style={{color:'hsl(var(--b-accent))'}}>{fmt.brlK(p.valor)}</strong></td>
-                      <td className="muted">{fmt.date(p.publicado)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {/* Tabela completa de Contratos PNCP */}
+          <ContratosTable full={full}/>
 
           {/* Timeline 360° */}
           <TimelinePanel
@@ -1227,6 +1210,168 @@ function FornecedorInfoCard({ full, c }) {
 }
 
 // =================================================================
+// ContratosTable — Tabela completa de contratos PNCP do fornecedor
+// =================================================================
+function ContratosTable({ full }) {
+  const { fmt } = window.DATA;
+  const [sortField, setSortField] = React.useState('valor_global');
+  const [sortOrder, setSortOrder] = React.useState('desc');
+  const [pageSize] = React.useState(20);
+  const [page, setPage] = React.useState(1);
+
+  if (!full) return null;
+  const contratos = full.contratos || [];
+  if (contratos.length === 0) return null;
+
+  const sorted = [...contratos].sort((a, b) => {
+    const av = a[sortField];
+    const bv = b[sortField];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    let cmp;
+    if (typeof av === 'number' && typeof bv === 'number') cmp = av - bv;
+    else cmp = String(av).localeCompare(String(bv));
+    return sortOrder === 'asc' ? cmp : -cmp;
+  });
+
+  const total = sorted.length;
+  const totalPages = Math.ceil(total / pageSize);
+  const visible = sorted.slice((page - 1) * pageSize, page * pageSize);
+
+  const handleSort = (f) => {
+    if (sortField === f) setSortOrder(o => o === 'asc' ? 'desc' : 'asc');
+    else { setSortField(f); setSortOrder('desc'); }
+    setPage(1);
+  };
+
+  const SortHead = ({ field, children, align }) => (
+    <th onClick={()=>handleSort(field)} style={{cursor:'pointer', textAlign: align || 'left', userSelect:'none'}}>
+      <span style={{display:'inline-flex', alignItems:'center', gap:4}}>
+        {children}
+        {sortField === field
+          ? <I.chevron size={9} style={{transform: sortOrder==='asc' ? 'rotate(-90deg)' : 'rotate(90deg)'}}/>
+          : <span style={{opacity:.3, fontSize:9}}>⇅</span>}
+      </span>
+    </th>
+  );
+
+  const formatDate = (d) => d ? new Date(d).toLocaleDateString('pt-BR') : '—';
+
+  const iaConfig = {
+    SIM:      { label:'Relevante',     cls:'success' },
+    sim:      { label:'Relevante',     cls:'success' },
+    NAO:      { label:'Não Relevante', cls:'' },
+    'NÃO':    { label:'Não Relevante', cls:'' },
+    PENDENTE: { label:'Analisando',    cls:'primary' },
+  };
+
+  const getVigenciaColor = (dias) => {
+    if (dias == null) return 'hsl(var(--fg-muted))';
+    if (dias < 30) return 'hsl(var(--danger))';
+    if (dias < 90) return 'hsl(var(--warning))';
+    return 'hsl(var(--success))';
+  };
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <div className="card-title" style={{display:'flex', alignItems:'center', gap:8}}>
+          <I.doc size={14}/>Contratos
+          <span className="chip" style={{fontSize:10}}>{total}</span>
+        </div>
+        <span className="muted" style={{fontSize:11.5}}>
+          Total: <strong className="mono">{fmt.brlK(full.valorTotal || 0)}</strong>
+        </span>
+      </div>
+      <div style={{maxHeight:480, overflowY:'auto'}}>
+        <table className="table">
+          <thead style={{position:'sticky', top:0, background:'hsl(var(--surface))', zIndex:1}}>
+            <tr>
+              <SortHead field="title">Título / Órgão</SortHead>
+              <SortHead field="data_inicio_vigencia">Vigência</SortHead>
+              <SortHead field="valor_global" align="right">Valor</SortHead>
+              <SortHead field="uf" align="center">UF</SortHead>
+              <SortHead field="classificacao_ia" align="center">IA</SortHead>
+              <th style={{textAlign:'center'}}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map(c => {
+              const ia = c.classificacao_ia ? iaConfig[c.classificacao_ia] : null;
+              const dias = c.dias_ate_fim_vigencia;
+              return (
+                <tr key={c.id}>
+                  <td style={{maxWidth:280}}>
+                    <div style={{fontSize:12.5, fontWeight:600}}>{c.title || '—'}</div>
+                    <div className="row" style={{gap:4, marginTop:2, alignItems:'center'}}>
+                      <I.building size={9} style={{color:'hsl(var(--fg-muted))'}}/>
+                      <span className="muted" style={{fontSize:11, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                        {c.orgao_nome || 'Órgão não informado'}
+                      </span>
+                    </div>
+                  </td>
+                  <td style={{fontSize:11.5}}>
+                    <div className="muted">
+                      {formatDate(c.data_inicio_vigencia)} {c.data_fim_vigencia && `→ ${formatDate(c.data_fim_vigencia)}`}
+                    </div>
+                    {dias != null && dias > 0 && (
+                      <span className="chip" style={{
+                        fontSize:9.5, marginTop:3, padding:'1px 6px',
+                        background: `${getVigenciaColor(dias)}22`, color: getVigenciaColor(dias),
+                        borderColor: `${getVigenciaColor(dias)} / .3`,
+                      }}>
+                        {dias} dias restantes
+                      </span>
+                    )}
+                  </td>
+                  <td style={{textAlign:'right'}}>
+                    <strong className="mono" style={{color:'hsl(var(--b-accent))', fontSize:12.5}}>
+                      {fmt.brlK(c.valor_global || 0)}
+                    </strong>
+                  </td>
+                  <td style={{textAlign:'center'}}>
+                    <span className="chip" style={{fontSize:10}}>{c.uf || '—'}</span>
+                  </td>
+                  <td style={{textAlign:'center'}}>
+                    {ia
+                      ? <span className={`chip ${ia.cls}`} style={{fontSize:9.5}}>{ia.label}</span>
+                      : <span className="chip" style={{fontSize:9.5}}>Pendente</span>}
+                  </td>
+                  <td style={{textAlign:'center'}}>
+                    {c.url_contrato && (
+                      <a href={c.url_contrato} target="_blank" rel="noreferrer" className="icon-btn" title="Abrir no PNCP">
+                        <I.refresh size={12}/>
+                      </a>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {totalPages > 1 && (
+        <div className="row-between" style={{padding:'10px 14px', borderTop:'1px solid hsl(var(--border))'}}>
+          <span className="muted" style={{fontSize:11.5}}>
+            {(page-1)*pageSize + 1}–{Math.min(page*pageSize, total)} de {total}
+          </span>
+          <div className="row" style={{gap:4}}>
+            <button className="btn btn-xs btn-ghost" disabled={page===1} onClick={()=>setPage(p=>p-1)}>
+              <I.chevron size={10} style={{transform:'rotate(180deg)'}}/>
+            </button>
+            <span className="muted" style={{fontSize:11.5, padding:'0 8px'}}>{page} / {totalPages}</span>
+            <button className="btn btn-xs btn-ghost" disabled={page===totalPages} onClick={()=>setPage(p=>p+1)}>
+              <I.chevron size={10}/>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =================================================================
 // LushaCandidatesCard — lista de candidatos Lusha pré-revelação
 // User vê quem existe (nome + cargo + flags has_email/phone) e
 // escolhe quem revelar (consome 1 crédito por reveal)
@@ -1454,3 +1599,4 @@ window.ContractsAnalysisGrid = ContractsAnalysisGrid;
 window.OriginChip = OriginChip;
 window.FornecedorInfoCard = FornecedorInfoCard;
 window.LushaCandidatesCard = LushaCandidatesCard;
+window.ContratosTable = ContratosTable;
