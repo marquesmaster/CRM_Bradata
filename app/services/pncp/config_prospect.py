@@ -23,7 +23,9 @@ DEFAULTS: dict[str, Any] = {
         "RS", "RO", "RR", "SC", "SP", "SE", "TO",
     ],
     "tipos_documento": "contrato",
-    "status": "vigente",
+    # PNCP aceita lista separada por vírgula. "a_iniciar" cobre contratos
+    # aguardando início de vigência — leads quentes para bodyshop.
+    "status": "vigente,a_iniciar",
     "tam_pagina": 500,
     "max_paginas": 100,
     # KEYWORDS focadas em bodyshop / staff augmentation / fábrica de software
@@ -130,7 +132,7 @@ DEFAULTS: dict[str, Any] = {
     ],
     "modalidades_estrategicas": [4, 6, 8, 9],
     "prefiltro_threshold": 0,
-    "valor_minimo": 50_000,
+    "valor_minimo": 500_000,
 }
 
 

@@ -127,10 +127,15 @@ def start_scheduler() -> None:
     if _scheduler is not None:
         return
     _scheduler = BackgroundScheduler(timezone="America/Sao_Paulo")
+    # ETL completo PNCP: 1x por semana (segunda 03:00 BRT).
     _scheduler.add_job(
         _job_pncp_daily,
-        CronTrigger(hour=settings.pncp_daily_cron_hour, minute=settings.pncp_daily_cron_minute),
-        id="pncp_daily",
+        CronTrigger(
+            day_of_week="mon",
+            hour=settings.pncp_daily_cron_hour,
+            minute=settings.pncp_daily_cron_minute,
+        ),
+        id="pncp_weekly",
         replace_existing=True,
     )
     # Cadência: roda uma vez por dia 09:00 (horário comercial BR)
@@ -164,7 +169,7 @@ def start_scheduler() -> None:
     )
     _scheduler.start()
     log.info(
-        "Scheduler iniciado (PNCP %02d:%02d, cadência 09:00 America/Sao_Paulo)",
+        "Scheduler iniciado (PNCP seg %02d:%02d, cadência 09:00 America/Sao_Paulo)",
         settings.pncp_daily_cron_hour,
         settings.pncp_daily_cron_minute,
     )

@@ -108,12 +108,9 @@ def _process_one_contrato(
                 except Exception as e:
                     log.warning("IA falhou %s: %s", contrato.numero_controle_pncp, e)
 
-            # Skip caro se IA disse NÃO/TALVEZ
-            if classify_with_ai and contrato.ai_classificacao not in (None, "SIM"):
-                contrato.itens_processados = True
-                contrato.resultados_processados = True
-                db.commit()
-                return result
+            # IA classifica para anotação/filtro, mas NÃO bloqueia ingestão.
+            # Queremos extrair fornecedores de todos os contratos que
+            # casaram com keywords — o filtro fino fica na UI.
 
             compra = ingest_compra_by_contrato(db, contrato)
             if compra:
