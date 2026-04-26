@@ -116,12 +116,23 @@ function LeadDetail({ companyId, onBack }) {
           <div className="row" style={{gap:16}}>
             <UI.Avatar name={c.name} size={56}/>
             <div>
-              <h1 className="page-title" style={{margin:0}}>{c.name}</h1>
-              <div className="row" style={{gap:8, marginTop:4}}>
+              <div className="row" style={{gap:10, alignItems:'center', flexWrap:'wrap'}}>
+                <h1 className="page-title" style={{margin:0}}>{c.name}</h1>
+                <OriginChip full={full}/>
+              </div>
+              <div className="row" style={{gap:8, marginTop:4, flexWrap:'wrap'}}>
                 <span className="mono muted" style={{fontSize:12}}>{fmt.cnpj(c.cnpj)}</span>
                 <span className="muted">·</span>
                 <span className="muted" style={{fontSize:13}}>{c.city}, {c.uf}</span>
                 {c.website && <><span className="muted">·</span><a href={`https://${c.website}`} target="_blank" rel="noreferrer" style={{color:'hsl(var(--b-accent))', fontSize:13}}>{c.website}</a></>}
+                {full && full.totalContratos > 0 && (
+                  <>
+                    <span className="muted">·</span>
+                    <span className="chip success" style={{fontSize:10.5}}>
+                      {full.totalContratos} contrato{full.totalContratos===1?'':'s'} PNCP
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -790,6 +801,9 @@ function ContractsKpiGrid({ full }) {
   if (!full) return null;
   const contratos = full.contratos || [];
   const total = full.totalContratos || contratos.length || 0;
+  // Empresa sem contratos PNCP (provavelmente cliente cadastrado manualmente):
+  // não mostra esse bloco — evita 6 cards vazios poluindo a tela
+  if (total === 0) return null;
   const valor = full.valorTotal || 0;
   const ticket = total > 0 ? valor / total : 0;
   const orgaosUnicos = new Set(contratos.map(c => c.orgao_nome).filter(Boolean));
@@ -843,6 +857,8 @@ function ContractsAnalysisGrid({ full }) {
   if (!full) return null;
   const contratos = full.contratos || [];
   const total = full.totalContratos || contratos.length || 0;
+  // Mesmo critério: sem contratos = sem análise PNCP
+  if (total === 0) return null;
 
   const relevantes = contratos.filter(c => (c.classificacao_ia || '').toUpperCase() === 'SIM').length;
   const naoRelevantes = contratos.filter(c => ['NAO','NÃO'].includes((c.classificacao_ia||'').toUpperCase())).length;
@@ -1003,9 +1019,31 @@ function ContractsAnalysisGrid({ full }) {
   );
 }
 
+// =================================================================
+// OriginChip — chip discreto que mostra de onde veio a empresa
+// =================================================================
+function OriginChip({ full }) {
+  if (!full?.origem) return null;
+  const map = {
+    pncp:           { label:'Vinda do PNCP',    icon:'radar',    cls:'primary' },
+    manual:         { label:'Cadastro manual',  icon:'plus',     cls:'' },
+    import_csv:     { label:'Importada (CSV)',  icon:'doc',      cls:'' },
+    enriquecimento: { label:'Enriquecimento',   icon:'sparkle',  cls:'' },
+    indicacao:      { label:'Indicação',        icon:'star',     cls:'warn' },
+  };
+  const m = map[full.origem] || { label: full.origem, icon:'sparkle', cls:'' };
+  return (
+    <span className={`chip ${m.cls}`} style={{fontSize:10.5, gap:4}}>
+      {React.createElement(I[m.icon] || I.sparkle, { size: 10 })}
+      {m.label}
+    </span>
+  );
+}
+
 window.LeadDetail = LeadDetail;
 window.EmailModal = EmailModal;
 window.TimelinePanel = TimelinePanel;
 window.CnpjSummaryCard = CnpjSummaryCard;
 window.ContractsKpiGrid = ContractsKpiGrid;
 window.ContractsAnalysisGrid = ContractsAnalysisGrid;
+window.OriginChip = OriginChip;

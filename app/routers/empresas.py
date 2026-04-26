@@ -456,6 +456,7 @@ def empresa_full(empresa_id: int, db: DBSession, _: CurrentUser):
         "icp_score": empresa.icp_score,
         "icp_motivo": empresa.icp_motivo,
         "status": empresa.status.value,
+        "origem": empresa.origem.value,   # 'pncp' | 'manual' | 'import_csv' | 'enriquecimento' | 'indicacao'
     }
 
 
