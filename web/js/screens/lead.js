@@ -8,6 +8,9 @@ function LeadDetail({ companyId, onBack }) {
   const [emailFor, setEmailFor] = React.useState(null);   // contato selecionado para envio
   const [timeline, setTimeline] = React.useState([]);
   const [loadingTl, setLoadingTl] = React.useState(false);
+  const [full, setFull] = React.useState(null);
+  const [loadingFull, setLoadingFull] = React.useState(false);
+  const [autoEnrichTried, setAutoEnrichTried] = React.useState(false);
 
   const loadContatos = React.useCallback(() => {
     if (!c?.id) return;
@@ -26,6 +29,27 @@ function LeadDetail({ companyId, onBack }) {
       .catch(() => setLoadingTl(false));
   }, [c?.id]);
   React.useEffect(loadTimeline, [loadTimeline]);
+
+  const loadFull = React.useCallback(() => {
+    if (!c?.id) return;
+    setLoadingFull(true);
+    window.API.api(`/empresas/${c.id}/full`)
+      .then(d => { setFull(d); setLoadingFull(false); })
+      .catch(() => setLoadingFull(false));
+  }, [c?.id]);
+  React.useEffect(loadFull, [loadFull]);
+
+  // Auto-enrich CNPJ.WS se a empresa ainda não foi enriquecida
+  React.useEffect(() => {
+    if (!full || autoEnrichTried || full.dados_enriquecidos) return;
+    setAutoEnrichTried(true);
+    const t = setTimeout(() => {
+      window.API.api(`/empresas/${c.id}/enriquecer`, { method: 'POST' })
+        .then(() => loadFull())
+        .catch(() => {});
+    }, 500);
+    return () => clearTimeout(t);
+  }, [full, autoEnrichTried, c?.id, loadFull]);
 
   if (!c) {
     return (
@@ -114,6 +138,17 @@ function LeadDetail({ companyId, onBack }) {
           <button className="btn btn-accent btn-sm"><I.plus size={12}/>Nova oportunidade</button>
         </div>
       </div>
+
+      {/* Card resumo CNPJ — KPIs do topo */}
+      <CnpjSummaryCard
+        full={full}
+        loading={loadingFull}
+        onRefresh={() => {
+          window.API.api(`/empresas/${c.id}/enriquecer`, { method:'POST' })
+            .then(() => loadFull())
+            .catch(()=>{});
+        }}
+      />
 
       {semDominio && !enrichMsg && (
         <div style={{
@@ -589,6 +624,159 @@ function formatHistoricoAcao(acao, entity_type) {
   return t + (map[acao] || acao);
 }
 
+// =================================================================
+// CnpjSummaryCard — KPIs do topo (anos, porte, setor, faturamento, etc)
+// =================================================================
+function CnpjSummaryCard({ full, loading, onRefresh }) {
+  const { fmt } = window.DATA;
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  if (loading && !full) {
+    return (
+      <div className="card" style={{padding:14, marginBottom:'var(--gap)'}}>
+        <div className="muted" style={{fontSize:12.5, textAlign:'center'}}>Carregando dados do CNPJ…</div>
+      </div>
+    );
+  }
+  if (!full) return null;
+
+  const enriched = full.dados_enriquecidos;
+  const dataEnriq = full.data_enriquecimento ? new Date(full.data_enriquecimento) : null;
+  const ageYears = full.data_abertura
+    ? Math.max(0, Math.floor((Date.now() - new Date(full.data_abertura).getTime()) / (365.25 * 86400000)))
+    : null;
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try { await onRefresh?.(); } finally { setRefreshing(false); }
+  };
+
+  // Estado: ainda não enriquecido — mostra warning + botão buscar
+  if (!enriched) {
+    return (
+      <div className="card" style={{
+        padding:14, marginBottom:'var(--gap)',
+        background:'hsl(var(--warning-soft))',
+        border:'1px solid hsl(var(--warning) / .3)',
+      }}>
+        <div className="row-between" style={{flexWrap:'wrap', gap:10}}>
+          <div className="row" style={{gap:10, alignItems:'center'}}>
+            <I.sparkle size={16} style={{color:'hsl(var(--warning))'}}/>
+            <span style={{color:'hsl(var(--warning))', fontSize:13.5}}>
+              Dados do CNPJ ainda não foram enriquecidos
+            </span>
+          </div>
+          <button className="btn btn-xs" onClick={handleRefresh} disabled={refreshing}
+            style={{borderColor:'hsl(var(--warning))', color:'hsl(var(--warning))', background:'transparent'}}>
+            <I.refresh size={11}/>{refreshing ? 'Buscando…' : 'Buscar dados CNPJ'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // KPIs visuais
+  const kpis = [
+    ageYears != null && {
+      icon: I.clock, color:'hsl(var(--b-accent))',
+      value: ageYears, label: ageYears === 1 ? 'ano' : 'anos',
+    },
+    full.porte && {
+      icon: I.building, color:'hsl(var(--warning))',
+      value: full.porte.replace('Empresa de ', '').replace(' Porte', ''), label:'porte',
+    },
+    full.setor && {
+      icon: I.target, color:'hsl(var(--success))',
+      value: full.setor, label:'setor', truncate: true,
+    },
+    full.faixa_faturamento && {
+      icon: I.chart, color:'hsl(var(--info))',
+      value: full.faixa_faturamento, label:'faturamento', truncate: true, small: true,
+    },
+    full.capital_social && {
+      icon: I.money, color:'hsl(var(--b-accent))',
+      value: fmt.brlK(full.capital_social), label:'capital',
+    },
+    (full.socios && full.socios.length > 0) && {
+      icon: I.users, color:'hsl(var(--warning))',
+      value: full.socios.length, label: full.socios.length === 1 ? 'sócio' : 'sócios',
+    },
+  ].filter(Boolean);
+
+  return (
+    <div className="card" style={{padding:14, marginBottom:'var(--gap)'}}>
+      {/* Header — status + botão refresh */}
+      <div className="row-between" style={{marginBottom:12, flexWrap:'wrap', gap:8}}>
+        <div className="row" style={{gap:8, alignItems:'center'}}>
+          <I.check size={13} style={{color:'hsl(var(--success))'}}/>
+          <span className="muted" style={{fontSize:11.5}}>
+            Dados atualizados{dataEnriq && ` em ${dataEnriq.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit', year:'2-digit'})}`}
+          </span>
+        </div>
+        <button className="icon-btn" onClick={handleRefresh} disabled={refreshing} title="Atualizar dados CNPJ"
+          style={{width:28, height:28}}>
+          <I.refresh size={12} style={refreshing ? {animation:'spin 0.8s linear infinite'} : {}}/>
+        </button>
+      </div>
+
+      {/* Grid de KPIs */}
+      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:10}}>
+        {kpis.map((k, i) => (
+          <div key={i} style={{
+            display:'flex', alignItems:'center', gap:10,
+            padding:'10px 12px', borderRadius:8,
+            background:'hsl(var(--surface-2, var(--surface)))',
+            border:'1px solid hsl(var(--border))',
+            minWidth:0,
+          }}>
+            <div style={{
+              width:34, height:34, borderRadius:8,
+              background:`${k.color}22`, color: k.color,
+              display:'grid', placeItems:'center', flex:'0 0 auto',
+            }}>
+              {React.createElement(k.icon, { size:14 })}
+            </div>
+            <div style={{minWidth:0, flex:1}}>
+              <div style={{
+                fontSize: k.small ? 11.5 : 16,
+                fontWeight: 700,
+                color:'hsl(var(--fg))',
+                lineHeight: 1.2,
+                ...(k.truncate ? { overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' } : {}),
+              }} title={k.truncate ? k.value : undefined}>
+                {k.value}
+              </div>
+              <div className="muted" style={{fontSize:10.5, marginTop:2}}>{k.label}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Linha de status — situação cadastral, regime, natureza */}
+      {(full.situacao_cadastral || full.regime_tributario || full.natureza_juridica) && (
+        <div className="row" style={{gap:8, marginTop:12, flexWrap:'wrap', alignItems:'center'}}>
+          {full.situacao_cadastral && (
+            <span className={`chip ${full.situacao_cadastral.toLowerCase() === 'ativa' ? 'success' : 'danger'}`}
+              style={{fontSize:10.5}}>
+              {full.situacao_cadastral}
+            </span>
+          )}
+          {full.regime_tributario && (
+            <span className="chip" style={{fontSize:10.5}}>{full.regime_tributario}</span>
+          )}
+          {full.natureza_juridica && (
+            <span className="muted" style={{fontSize:11.5, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:280}}
+              title={full.natureza_juridica}>
+              {full.natureza_juridica}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 window.LeadDetail = LeadDetail;
 window.EmailModal = EmailModal;
 window.TimelinePanel = TimelinePanel;
+window.CnpjSummaryCard = CnpjSummaryCard;
