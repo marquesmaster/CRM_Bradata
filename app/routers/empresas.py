@@ -344,34 +344,45 @@ def empresa_full(empresa_id: int, db: DBSession, _: CurrentUser):
     """
     from app.models.contato import Contato
     from app.models.lusha_candidate import LushaCandidate
-    from app.models.pncp import PncpContrato, PncpResultado
+    from app.models.pncp import PncpCompra, PncpCompraItem, PncpContrato, PncpResultado
+    from datetime import date
     empresa = db.get(Empresa, empresa_id)
     if not empresa:
         raise HTTPException(status_code=404, detail="Empresa não encontrada")
 
-    # Contratos PNCP via PncpResultado (fornecedor que ganhou) → join com PncpContrato
-    resultados = (
-        db.query(PncpResultado)
+    # Resultados → JOIN com Compra (orgão, UF, modalidade) e Contrato (vigência, IA)
+    rows = (
+        db.query(PncpResultado, PncpCompra, PncpContrato)
+        .join(PncpCompraItem, PncpCompraItem.id == PncpResultado.item_id)
+        .join(PncpCompra, PncpCompra.id == PncpCompraItem.compra_id)
+        .outerjoin(PncpContrato, PncpContrato.numero_controle_pncp_compra == PncpResultado.numero_controle_pncp_compra)
         .filter(PncpResultado.empresa_id == empresa_id)
         .order_by(PncpResultado.data_resultado.desc().nullslast())
         .all()
     )
+    today = date.today()
     contratos = []
-    for r in resultados:
+    for r, compra, contrato in rows:
+        di = contrato.data_inicio_vigencia if contrato else None
+        df = contrato.data_fim_vigencia if contrato else None
+        dias_ate_fim = (df - today).days if df else None
+        dias_vigencia = (df - di).days if (di and df) else None
         contratos.append({
             "id": r.id,
-            "title": r.numero_controle_pncp_compra,
-            "orgao_nome": r.orgao_razao_social,
-            "data_inicio_vigencia": r.data_resultado.isoformat() if r.data_resultado else None,
-            "data_fim_vigencia": None,  # sem dado direto
-            "valor_global": float(r.valor_total_homologado or 0),
-            "uf": r.unidade_orgao_uf_sigla,
-            "classificacao_ia": getattr(r, "classificacao_bodyshop", None),
-            "tipo_servico_identificado": getattr(r, "tipo_servico_ia", None),
-            "modalidade_licitacao_nome": r.modalidade_nome,
-            "esfera_nome": r.esfera_nome,
-            "ano": (r.data_resultado.year if r.data_resultado else None),
-            "url_contrato": None,
+            "title": (contrato.titulo if contrato else None) or r.numero_controle_pncp_compra,
+            "orgao_nome": (contrato.orgao_nome if contrato else None) or (compra.orgao_razao_social if compra else None),
+            "data_inicio_vigencia": di.isoformat() if di else (r.data_resultado.isoformat() if r.data_resultado else None),
+            "data_fim_vigencia": df.isoformat() if df else None,
+            "dias_ate_fim_vigencia": dias_ate_fim,
+            "dias_vigencia": dias_vigencia,
+            "valor_global": float((contrato.valor_global if contrato else None) or r.valor_total_homologado or 0),
+            "uf": (contrato.uf if contrato else None) or (compra.unidade_uf_sigla if compra else None),
+            "classificacao_ia": (contrato.ai_classificacao if contrato else None),
+            "tipo_servico_identificado": (contrato.ai_tipo_servico if contrato else None),
+            "modalidade_licitacao_nome": (contrato.modalidade_licitacao_nome if contrato else None) or (compra.modalidade_nome if compra else None),
+            "esfera_nome": (contrato.esfera_nome if contrato else None) or (compra.esfera_nome if compra else None),
+            "ano": (contrato.ano if contrato and contrato.ano else (str(r.data_resultado.year) if r.data_resultado else None)),
+            "url_contrato": contrato.item_url if contrato else None,
         })
 
     total_contratos = len(contratos)

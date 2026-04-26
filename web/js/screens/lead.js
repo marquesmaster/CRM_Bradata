@@ -150,6 +150,12 @@ function LeadDetail({ companyId, onBack }) {
         }}
       />
 
+      {/* 6 KPIs de Contratos */}
+      <ContractsKpiGrid full={full}/>
+
+      {/* Análise IA + Informações + Tipos de Serviço + Prioridades */}
+      <ContractsAnalysisGrid full={full}/>
+
       {semDominio && !enrichMsg && (
         <div style={{
           padding:'12px 16px', marginBottom:'var(--gap)', borderRadius:10, fontSize:13,
@@ -776,7 +782,230 @@ function CnpjSummaryCard({ full, loading, onRefresh }) {
   );
 }
 
+// =================================================================
+// ContractsKpiGrid — 6 KPIs (Contratos / Valor / Ticket / Órgãos / Relevância IA / Vigência)
+// =================================================================
+function ContractsKpiGrid({ full }) {
+  const { fmt } = window.DATA;
+  if (!full) return null;
+  const contratos = full.contratos || [];
+  const total = full.totalContratos || contratos.length || 0;
+  const valor = full.valorTotal || 0;
+  const ticket = total > 0 ? valor / total : 0;
+  const orgaosUnicos = new Set(contratos.map(c => c.orgao_nome).filter(Boolean));
+  const relevantes = contratos.filter(c => c.classificacao_ia === 'SIM' || c.classificacao_ia === 'sim').length;
+  const taxaRelevancia = total > 0 ? Math.round((relevantes / total) * 100) : 0;
+  const dias = contratos.map(c => c.dias_vigencia).filter(d => d != null && d > 0);
+  const mediaVigencia = dias.length > 0 ? Math.round(dias.reduce((s, d) => s + d, 0) / dias.length) : 0;
+
+  const cards = [
+    { label:'Contratos', value: total, icon: I.doc, color:'hsl(var(--b-accent))' },
+    { label:'Valor Total', value: fmt.brlK(valor), icon: I.money, color:'hsl(var(--success))' },
+    { label:'Ticket Médio', value: fmt.brlK(ticket), icon: I.chart, color:'hsl(var(--info))' },
+    { label:'Órgãos', value: orgaosUnicos.size, icon: I.building, color:'hsl(var(--warning))' },
+    { label:'Relevância IA', value: `${taxaRelevancia}%`, icon: I.target, color:'hsl(var(--b-accent))' },
+    { label:'Dias Méd. Vigência', value: mediaVigencia || '—', icon: I.clock, color:'hsl(var(--success))' },
+  ];
+
+  return (
+    <div style={{
+      display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(150px, 1fr))',
+      gap:10, marginBottom:'var(--gap)',
+    }}>
+      {cards.map((k, i) => (
+        <div key={i} className="card" style={{padding:14}}>
+          <div className="row" style={{gap:10, alignItems:'center'}}>
+            <div style={{
+              width:36, height:36, borderRadius:8,
+              background:`${k.color}22`, color: k.color,
+              display:'grid', placeItems:'center', flex:'0 0 auto',
+            }}>
+              {React.createElement(k.icon, {size:16})}
+            </div>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:18, fontWeight:800, lineHeight:1.1, color:'hsl(var(--fg))'}}>
+                {k.value}
+              </div>
+              <div className="muted" style={{fontSize:10.5, marginTop:2}}>{k.label}</div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// =================================================================
+// ContractsAnalysisGrid — 4 cards (Classificação IA / Informações / Serviços / Prioridades)
+// =================================================================
+function ContractsAnalysisGrid({ full }) {
+  const { fmt } = window.DATA;
+  if (!full) return null;
+  const contratos = full.contratos || [];
+  const total = full.totalContratos || contratos.length || 0;
+
+  const relevantes = contratos.filter(c => (c.classificacao_ia || '').toUpperCase() === 'SIM').length;
+  const naoRelevantes = contratos.filter(c => ['NAO','NÃO'].includes((c.classificacao_ia||'').toUpperCase())).length;
+  const pendentes = total - relevantes - naoRelevantes;
+  const pct = (n) => total > 0 ? Math.round((n / total) * 100) : 0;
+
+  const valores = contratos.map(c => c.valor_global || 0).filter(v => v > 0);
+  const maior = valores.length ? Math.max(...valores) : 0;
+  const menor = valores.length ? Math.min(...valores) : 0;
+  const esferas = [...new Set(contratos.map(c => c.esfera_nome).filter(Boolean))];
+  const anos = [...new Set(contratos.map(c => c.ano).filter(Boolean))].sort();
+  const tipos = [...new Set(contratos.map(c => c.tipo_servico_identificado).filter(Boolean))];
+  const modalidades = [...new Set(contratos.map(c => c.modalidade_licitacao_nome).filter(Boolean))];
+
+  // Prioridade — extraída do tipo de serviço se for bodyshop, ou do classificacao
+  const prioridadeMap = contratos.reduce((acc, c) => {
+    let p = 'NA';
+    if ((c.classificacao_ia||'').toUpperCase() === 'SIM') p = 'MEDIA';
+    if ((c.classificacao_ia||'').toUpperCase() === 'SIM' && (c.valor_global||0) >= 500_000) p = 'ALTA';
+    acc[p] = (acc[p] || 0) + 1;
+    return acc;
+  }, {});
+
+  return (
+    <div style={{
+      display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(240px, 1fr))',
+      gap:'var(--gap)', marginBottom:'var(--gap)',
+    }}>
+      {/* Classificação IA */}
+      <div className="card">
+        <div className="card-head">
+          <div className="card-title" style={{display:'flex', alignItems:'center', gap:8}}>
+            <I.chart size={14}/>Classificação IA
+          </div>
+        </div>
+        <div className="card-p" style={{display:'flex', flexDirection:'column', gap:14}}>
+          {[
+            { label:'Relevantes', n: relevantes, color:'hsl(var(--success))', icon:I.check },
+            { label:'Não Relevantes', n: naoRelevantes, color:'hsl(var(--danger))', icon:I.x },
+            { label:'Pendentes', n: pendentes, color:'hsl(var(--warning))', icon:I.sparkle },
+          ].map(row => (
+            <div key={row.label}>
+              <div className="row-between" style={{fontSize:12.5, marginBottom:5}}>
+                <span className="row" style={{gap:6, alignItems:'center'}}>
+                  {React.createElement(row.icon, {size:12, style:{color:row.color}})}
+                  {row.label}
+                </span>
+                <strong style={{color:row.color}}>
+                  {row.n}<span className="muted" style={{fontSize:10.5, fontWeight:400, marginLeft:4}}>({pct(row.n)}%)</span>
+                </strong>
+              </div>
+              <div className="progress" style={{height:6}}>
+                <span style={{width:`${pct(row.n)}%`, background:row.color}}/>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Informações */}
+      <div className="card">
+        <div className="card-head">
+          <div className="card-title" style={{display:'flex', alignItems:'center', gap:8}}>
+            <I.star size={14}/>Informações
+          </div>
+        </div>
+        <div className="card-p" style={{display:'flex', flexDirection:'column', gap:10}}>
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
+            <div>
+              <div className="card-section-title" style={{marginBottom:2}}>Primeiro</div>
+              <div style={{fontSize:12.5, fontWeight:600}}>{full.primeiroContrato ? new Date(full.primeiroContrato).toLocaleDateString('pt-BR') : '—'}</div>
+            </div>
+            <div>
+              <div className="card-section-title" style={{marginBottom:2}}>Último</div>
+              <div style={{fontSize:12.5, fontWeight:600}}>{full.ultimoContrato ? new Date(full.ultimoContrato).toLocaleDateString('pt-BR') : '—'}</div>
+            </div>
+            <div>
+              <div className="card-section-title" style={{marginBottom:2}}>Maior</div>
+              <div style={{fontSize:12.5, fontWeight:600, color:'hsl(var(--success))'}}>{maior > 0 ? fmt.brlK(maior) : '—'}</div>
+            </div>
+            <div>
+              <div className="card-section-title" style={{marginBottom:2}}>Menor</div>
+              <div style={{fontSize:12.5, fontWeight:600}}>{menor > 0 ? fmt.brlK(menor) : '—'}</div>
+            </div>
+          </div>
+          {esferas.length > 0 && (
+            <div style={{borderTop:'1px solid hsl(var(--border))', paddingTop:8}}>
+              <div className="card-section-title" style={{marginBottom:6}}>Esferas</div>
+              <div className="row" style={{gap:4, flexWrap:'wrap'}}>
+                {esferas.map(e => <span key={e} className="chip" style={{fontSize:10.5, textTransform:'capitalize'}}>{e}</span>)}
+              </div>
+            </div>
+          )}
+          {anos.length > 0 && (
+            <div style={{borderTop:'1px solid hsl(var(--border))', paddingTop:8}}>
+              <div className="card-section-title" style={{marginBottom:6}}>Anos</div>
+              <div className="row" style={{gap:4, flexWrap:'wrap'}}>
+                {anos.map(a => <span key={a} className="chip" style={{fontSize:10.5}}>{a}</span>)}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Serviços */}
+      <div className="card">
+        <div className="card-head">
+          <div className="card-title" style={{display:'flex', alignItems:'center', gap:8}}>
+            <I.briefcase size={14}/>Serviços
+          </div>
+        </div>
+        <div className="card-p" style={{maxHeight:220, overflowY:'auto'}}>
+          <div className="card-section-title" style={{marginBottom:6}}>Tipos de Serviço ({tipos.length})</div>
+          <div className="row" style={{gap:4, flexWrap:'wrap', marginBottom:10}}>
+            {tipos.length > 0 ? tipos.map(t => (
+              <span key={t} className="chip primary" style={{fontSize:10.5, padding:'2px 7px'}} title={t}>
+                {t.length > 50 ? t.slice(0, 50) + '…' : t}
+              </span>
+            )) : <span className="muted" style={{fontSize:11.5}}>Nenhum identificado</span>}
+          </div>
+          {modalidades.length > 0 && (
+            <>
+              <div className="card-section-title" style={{marginBottom:6, marginTop:8}}>Modalidades ({modalidades.length})</div>
+              <div className="row" style={{gap:4, flexWrap:'wrap'}}>
+                {modalidades.map(m => <span key={m} className="chip" style={{fontSize:10.5}}>{m}</span>)}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Prioridades */}
+      <div className="card">
+        <div className="card-head">
+          <div className="card-title" style={{display:'flex', alignItems:'center', gap:8}}>
+            <I.target size={14}/>Prioridades
+          </div>
+        </div>
+        <div className="card-p" style={{display:'flex', flexDirection:'column', gap:8}}>
+          {Object.keys(prioridadeMap).length === 0 ? (
+            <span className="muted" style={{fontSize:11.5}}>Sem prioridades calculadas</span>
+          ) : (
+            Object.entries(prioridadeMap)
+              .sort((a, b) => b[1] - a[1])
+              .map(([prio, n]) => {
+                const cls = prio === 'ALTA' ? 'danger' : prio === 'MEDIA' ? 'warn' : '';
+                return (
+                  <div key={prio} className="row-between" style={{padding:'6px 0', borderBottom:'1px solid hsl(var(--border))'}}>
+                    <span className={`chip ${cls}`} style={{fontSize:10.5}}>{prio}</span>
+                    <strong style={{fontSize:13}}>{n}</strong>
+                  </div>
+                );
+              })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 window.LeadDetail = LeadDetail;
 window.EmailModal = EmailModal;
 window.TimelinePanel = TimelinePanel;
 window.CnpjSummaryCard = CnpjSummaryCard;
+window.ContractsKpiGrid = ContractsKpiGrid;
+window.ContractsAnalysisGrid = ContractsAnalysisGrid;
