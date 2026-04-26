@@ -250,6 +250,9 @@ function LeadDetail({ companyId, onBack }) {
           {/* Tabela completa de Contratos PNCP */}
           <ContratosTable full={full}/>
 
+          {/* Distribuição UF + Lista Órgãos */}
+          <UfOrgaosGrid full={full}/>
+
           {/* Timeline 360° */}
           <TimelinePanel
             items={timeline}
@@ -1210,6 +1213,101 @@ function FornecedorInfoCard({ full, c }) {
 }
 
 // =================================================================
+// UfOrgaosGrid — Distribuição por UF + Lista de Órgãos Públicos
+// =================================================================
+function UfOrgaosGrid({ full }) {
+  const { fmt } = window.DATA;
+  if (!full) return null;
+  const contratos = full.contratos || [];
+  if (contratos.length === 0) return null;
+
+  // Distribuição UF: agrupa valor_global por UF
+  const ufMap = {};
+  contratos.forEach(c => {
+    if (!c.uf) return;
+    ufMap[c.uf] = (ufMap[c.uf] || 0) + (c.valor_global || 0);
+  });
+  const ufList = Object.entries(ufMap)
+    .map(([uf, valor]) => ({ uf, valor }))
+    .sort((a, b) => b.valor - a.valor);
+  const valorTotal = full.valorTotal || 0;
+  const maxUfValor = ufList[0]?.valor || 1;
+
+  // Órgãos únicos
+  const orgaosMap = {};
+  contratos.forEach(c => {
+    if (!c.orgao_nome) return;
+    orgaosMap[c.orgao_nome] = (orgaosMap[c.orgao_nome] || 0) + 1;
+  });
+  const orgaos = Object.entries(orgaosMap)
+    .map(([nome, count]) => ({ nome, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return (
+    <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(280px, 1fr))', gap:'var(--gap)'}}>
+      {/* Distribuição UF */}
+      {ufList.length > 0 && (
+        <div className="card">
+          <div className="card-head">
+            <div className="card-title" style={{display:'flex', alignItems:'center', gap:8}}>
+              <I.target size={14}/>Distribuição por UF
+              <span className="chip" style={{fontSize:10}}>{ufList.length} estados</span>
+            </div>
+          </div>
+          <div className="card-p" style={{maxHeight:280, overflowY:'auto', display:'flex', flexDirection:'column', gap:8}}>
+            {ufList.map(u => {
+              const pct = (u.valor / maxUfValor) * 100;
+              const pctTotal = valorTotal > 0 ? (u.valor / valorTotal) * 100 : 0;
+              return (
+                <div key={u.uf}>
+                  <div className="row-between" style={{fontSize:12, marginBottom:3}}>
+                    <span className="row" style={{gap:6}}>
+                      <span className="chip" style={{fontSize:10, padding:'1px 6px', minWidth:30, justifyContent:'center'}}>{u.uf}</span>
+                      <span className="muted" style={{fontSize:11}}>{pctTotal.toFixed(1)}%</span>
+                    </span>
+                    <strong className="mono" style={{fontSize:11.5}}>{fmt.brlK(u.valor)}</strong>
+                  </div>
+                  <div className="progress" style={{height:5}}>
+                    <span style={{width:`${pct}%`, background:'hsl(var(--b-accent))'}}/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Lista de Órgãos */}
+      {orgaos.length > 0 && (
+        <div className="card">
+          <div className="card-head">
+            <div className="card-title" style={{display:'flex', alignItems:'center', gap:8}}>
+              <I.building size={14}/>Órgãos Públicos
+              <span className="chip" style={{fontSize:10}}>{orgaos.length}</span>
+            </div>
+          </div>
+          <div className="card-p" style={{maxHeight:280, overflowY:'auto', display:'flex', flexDirection:'column', gap:6}}>
+            {orgaos.map((o, i) => (
+              <div key={i} className="row" style={{
+                gap:8, padding:'8px 10px', borderRadius:6,
+                background:'hsl(var(--surface-2, var(--surface)))',
+                alignItems:'flex-start',
+              }}>
+                <I.building size={12} style={{color:'hsl(var(--fg-muted))', marginTop:2, flex:'0 0 auto'}}/>
+                <div style={{flex:1, minWidth:0, fontSize:11.5, lineHeight:1.4}} title={o.nome}>
+                  {o.nome}
+                </div>
+                <span className="chip" style={{fontSize:9.5, flex:'0 0 auto'}}>{o.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =================================================================
 // ContratosTable — Tabela completa de contratos PNCP do fornecedor
 // =================================================================
 function ContratosTable({ full }) {
@@ -1600,3 +1698,4 @@ window.OriginChip = OriginChip;
 window.FornecedorInfoCard = FornecedorInfoCard;
 window.LushaCandidatesCard = LushaCandidatesCard;
 window.ContratosTable = ContratosTable;
+window.UfOrgaosGrid = UfOrgaosGrid;
