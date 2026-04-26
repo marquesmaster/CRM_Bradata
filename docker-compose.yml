@@ -2,9 +2,9 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: crm
-      POSTGRES_PASSWORD: crm
-      POSTGRES_DB: crm_bradata
+      POSTGRES_USER: ${POSTGRES_USER:-crm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crm}
+      POSTGRES_DB: ${POSTGRES_DB:-crm_bradata}
     ports:
       - "5432:5432"
     volumes:
@@ -19,7 +19,7 @@ services:
     build: .
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+psycopg2://crm:crm@db:5432/crm_bradata
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD:-crm}@db:5432/${POSTGRES_DB:-crm_bradata}
     depends_on:
       db:
         condition: service_healthy
