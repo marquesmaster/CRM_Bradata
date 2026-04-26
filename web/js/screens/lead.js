@@ -244,6 +244,9 @@ function LeadDetail({ companyId, onBack }) {
             </div>
           </div>
 
+          {/* Candidates Lusha (lista pré-revelação) */}
+          <LushaCandidatesCard empresaId={c.id} onRevealed={loadContatos}/>
+
           {/* Histórico PNCP */}
           {contracts.length > 0 && (
             <div className="card">
@@ -1185,6 +1188,204 @@ function FornecedorInfoCard({ full, c }) {
 }
 
 // =================================================================
+// LushaCandidatesCard — lista de candidatos Lusha pré-revelação
+// User vê quem existe (nome + cargo + flags has_email/phone) e
+// escolhe quem revelar (consome 1 crédito por reveal)
+// =================================================================
+function LushaCandidatesCard({ empresaId, onRevealed }) {
+  const [candidates, setCandidates] = React.useState([]);
+  const [loading, setLoading] = React.useState(false);
+  const [searching, setSearching] = React.useState(false);
+  const [revealingIds, setRevealingIds] = React.useState(new Set());
+  const [search, setSearch] = React.useState('');
+  const [filter, setFilter] = React.useState('all'); // all | revealed | pending
+  const [searchMsg, setSearchMsg] = React.useState(null);
+
+  const load = React.useCallback(() => {
+    if (!empresaId) return;
+    setLoading(true);
+    window.API.api(`/empresas/${empresaId}/lusha/candidates`)
+      .then(setCandidates)
+      .finally(() => setLoading(false));
+  }, [empresaId]);
+
+  React.useEffect(load, [load]);
+
+  const buscar = async () => {
+    setSearching(true);
+    setSearchMsg(null);
+    try {
+      const r = await window.API.api(`/empresas/${empresaId}/lusha/search`, { method: 'POST' });
+      if (r.error) {
+        setSearchMsg({ tone: 'danger', text: r.error });
+      } else {
+        setSearchMsg({
+          tone: 'success',
+          text: `${(r.contacts || []).length} contatos no domínio ${r.domain || '?'}`,
+        });
+      }
+      load();
+    } catch (e) {
+      setSearchMsg({ tone: 'danger', text: e.message });
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const revelar = async (cand) => {
+    if (!confirm(`Revelar ${cand.nome}? Isso consome 1 crédito Lusha.`)) return;
+    setRevealingIds(prev => new Set(prev).add(cand.id));
+    try {
+      await window.API.api(`/empresas/lusha/candidates/${cand.id}/revelar`, { method: 'POST' });
+      load();
+      onRevealed?.();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setRevealingIds(prev => { const s = new Set(prev); s.delete(cand.id); return s; });
+    }
+  };
+
+  const revelarSelecionados = async (ids) => {
+    if (ids.length === 0) return;
+    if (!confirm(`Revelar ${ids.length} contatos? Consome ${ids.length} créditos Lusha.`)) return;
+    setRevealingIds(prev => new Set([...prev, ...ids]));
+    try {
+      const candsByPersonId = {};
+      candidates.forEach(c => candsByPersonId[c.lusha_person_id] = c);
+      const personIds = ids.map(id => candsByPersonId[candidates.find(c => c.id === id)?.lusha_person_id || '']?.lusha_person_id).filter(Boolean);
+      // backend aceita /enrich-batch com contact_ids = lusha_person_ids
+      const lushaPersonIds = candidates.filter(c => ids.includes(c.id)).map(c => c.lusha_person_id);
+      await window.API.api(`/empresas/${empresaId}/lusha/enrich-batch`, {
+        method: 'POST',
+        body: { contact_ids: lushaPersonIds },
+      });
+      load();
+      onRevealed?.();
+    } catch (e) { alert(e.message); }
+    finally { setRevealingIds(new Set()); }
+  };
+
+  const q = search.trim().toLowerCase();
+  const filtered = candidates.filter(c => {
+    if (q && !(c.nome || '').toLowerCase().includes(q) && !(c.cargo || '').toLowerCase().includes(q)) return false;
+    if (filter === 'revealed' && !c.revelado_em) return false;
+    if (filter === 'pending' && c.revelado_em) return false;
+    return true;
+  });
+
+  const totalRev = candidates.filter(c => c.revelado_em).length;
+  const totalPend = candidates.length - totalRev;
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <div>
+          <div className="card-title" style={{display:'flex', alignItems:'center', gap:8}}>
+            <I.sparkle size={14}/>Contatos Lusha
+            <span className="chip" style={{fontSize:10}}>{candidates.length}</span>
+          </div>
+          <div className="card-sub" style={{display:'flex', gap:8, alignItems:'center', marginTop:4}}>
+            <span className="chip success" style={{fontSize:10}}><I.check size={9}/>{totalRev} revelados</span>
+            <span className="chip" style={{fontSize:10}}>{totalPend} pendentes</span>
+          </div>
+        </div>
+        <button className="btn btn-xs btn-ghost" onClick={buscar} disabled={searching}>
+          <I.search size={11}/>{searching ? 'Buscando…' : 'Buscar Lusha'}
+        </button>
+      </div>
+
+      {searchMsg && (
+        <div style={{
+          padding:'10px 14px', fontSize:12.5, marginBottom:0,
+          background: searchMsg.tone === 'success' ? 'hsl(var(--success-soft))' : 'hsl(var(--danger-soft))',
+          color: searchMsg.tone === 'success' ? 'hsl(var(--success))' : 'hsl(var(--danger))',
+          borderBottom: '1px solid hsl(var(--border))',
+        }}>{searchMsg.text}</div>
+      )}
+
+      {candidates.length === 0 && !loading && (
+        <div style={{padding:24, textAlign:'center'}}>
+          <div className="muted" style={{marginBottom:10, fontSize:13}}>
+            Nenhum candidato Lusha buscado ainda.
+          </div>
+          <button className="btn btn-sm btn-accent" onClick={buscar} disabled={searching}>
+            <I.search size={12}/>{searching ? 'Buscando…' : 'Buscar contatos no Lusha'}
+          </button>
+          <div className="muted" style={{fontSize:11, marginTop:8}}>
+            Sem custo — só lista quem existe na empresa.
+          </div>
+        </div>
+      )}
+
+      {candidates.length > 0 && (
+        <>
+          <div style={{padding:'10px 14px', display:'flex', gap:8, alignItems:'center', borderBottom:'1px solid hsl(var(--border))'}}>
+            <I.search size={12} style={{color:'hsl(var(--fg-muted))'}}/>
+            <input className="input" placeholder="Buscar nome ou cargo…" value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{flex:1, height:30, fontSize:12.5}}/>
+            <div className="segment-ctrl">
+              {[['all','Todos'],['pending','Pendentes'],['revealed','Revelados']].map(([k,l]) => (
+                <button key={k} className={filter===k?'active':''} onClick={()=>setFilter(k)}>{l}</button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{maxHeight:480, overflowY:'auto'}}>
+            {loading && <div className="muted" style={{padding:20, textAlign:'center'}}>Carregando…</div>}
+            {!loading && filtered.length === 0 && (
+              <div className="muted" style={{padding:20, textAlign:'center', fontSize:13}}>
+                Nenhum candidato com esses filtros.
+              </div>
+            )}
+            {!loading && filtered.map(cand => {
+              const isRevealing = revealingIds.has(cand.id);
+              const isRevealed = !!cand.revelado_em;
+              return (
+                <div key={cand.id} style={{
+                  padding:'12px 14px',
+                  borderBottom:'1px solid hsl(var(--border))',
+                  display:'grid', gridTemplateColumns:'36px 1fr auto', gap:12, alignItems:'center',
+                  background: isRevealed ? 'hsl(var(--success-soft))' : 'transparent',
+                }}>
+                  <UI.Avatar name={cand.nome || '?'} size={36}/>
+                  <div style={{minWidth:0}}>
+                    <div className="row" style={{gap:6, alignItems:'center', flexWrap:'wrap'}}>
+                      <strong style={{fontSize:13}}>{cand.nome || '(sem nome)'}</strong>
+                      {isRevealed
+                        ? <span className="chip success" style={{fontSize:9.5}}><I.check size={9}/>Revelado</span>
+                        : <span className="chip" style={{fontSize:9.5}}>Pendente</span>}
+                    </div>
+                    <div className="muted" style={{fontSize:11.5, marginTop:2}}>{cand.cargo || '—'}{cand.departamento && ` · ${cand.departamento}`}</div>
+                    <div className="row" style={{gap:8, marginTop:4, flexWrap:'wrap'}}>
+                      {cand.has_phone && <span className="chip" style={{fontSize:9.5, color:'hsl(var(--success))', borderColor:'hsl(var(--success) / .3)'}}><I.phone size={8}/>{cand.n_phones || ''} telefone{cand.n_phones===1?'':'s'}</span>}
+                      {cand.has_mobile && <span className="chip" style={{fontSize:9.5, color:'hsl(var(--success))', borderColor:'hsl(var(--success) / .3)'}}>📱 mobile</span>}
+                      {cand.has_email && <span className="chip" style={{fontSize:9.5, color:'hsl(var(--info))', borderColor:'hsl(var(--info) / .3)'}}><I.mail size={8}/>{cand.n_emails || ''} email{cand.n_emails===1?'':'s'}</span>}
+                      {cand.linkedin_url && <a href={cand.linkedin_url} target="_blank" rel="noreferrer" className="chip" style={{fontSize:9.5, color:'#0077B5', borderColor:'#0077B5 / .3'}}><I.linkedin size={8}/>LinkedIn</a>}
+                    </div>
+                  </div>
+                  <div>
+                    {!isRevealed && (
+                      <button className="btn btn-xs btn-accent" onClick={() => revelar(cand)} disabled={isRevealing}>
+                        {isRevealing ? '…' : <><I.sparkle size={10}/>Revelar</>}
+                      </button>
+                    )}
+                    {isRevealed && cand.contato_id && (
+                      <span className="muted" style={{fontSize:11}}>já no CRM</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// =================================================================
 // OriginChip — chip discreto que mostra de onde veio a empresa
 // =================================================================
 function OriginChip({ full }) {
@@ -1213,3 +1414,4 @@ window.ContractsKpiGrid = ContractsKpiGrid;
 window.ContractsAnalysisGrid = ContractsAnalysisGrid;
 window.OriginChip = OriginChip;
 window.FornecedorInfoCard = FornecedorInfoCard;
+window.LushaCandidatesCard = LushaCandidatesCard;
