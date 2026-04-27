@@ -143,9 +143,6 @@ function LeadDetail({ companyId, onBack }) {
               <I.refresh size={12}/>{enriching ? 'Buscando…' : 'Buscar dados na Receita (CNPJ.WS)'}
             </button>
           )}
-          <button className="btn btn-ghost btn-sm" onClick={enriquecerLusha} disabled={enriching || semDominio} title={semDominio ? 'Enriqueça o CNPJ primeiro pra ter o domínio' : ''}>
-            <I.phone size={12}/>{enriching ? 'Buscando…' : 'Enriquecer contatos (Lusha)'}
-          </button>
           <button className="btn btn-accent btn-sm"><I.plus size={12}/>Nova oportunidade</button>
         </div>
       </div>
@@ -201,20 +198,42 @@ function LeadDetail({ companyId, onBack }) {
           {/* Dados da empresa (FornecedorInfoCard) */}
           <FornecedorInfoCard full={full} c={c}/>
 
-          {/* Contatos */}
+          {/* Tabela completa de Contratos PNCP */}
+          <ContratosTable full={full}/>
+
+          {/* Distribuição UF + Lista Órgãos */}
+          <UfOrgaosGrid full={full}/>
+
+          {/* Timeline 360° */}
+          <TimelinePanel
+            items={timeline}
+            loading={loadingTl}
+            onReload={loadTimeline}
+            empresaId={c.id}
+          />
+        </div>
+
+        <div style={{display:'flex', flexDirection:'column', gap:'var(--gap)'}}>
+          <div className="card halo">
+            <div className="card-p" style={{textAlign:'center'}}>
+              <div className="card-section-title">Bradata Score</div>
+              <UI.ScoreRing value={c.score} size={100} stroke={8}/>
+              <div style={{marginTop:10, fontWeight:700, fontSize:13, color: c.score>=80?'hsl(var(--success))':c.score>=60?'hsl(var(--warning))':'hsl(var(--fg-muted))'}}>
+                {c.score >= 80 ? '🔥 Lead prioritário' : c.score >= 60 ? 'Potencial médio' : 'Baixa prioridade'}
+              </div>
+            </div>
+          </div>
+
+          {/* Contatos do CRM (já no banco) */}
           <div className="card">
             <div className="card-head">
-              <div><div className="card-title">Contatos</div><div className="card-sub">{contatos.length} no banco · Lusha cache permanente</div></div>
-              <button className="btn btn-xs btn-ghost" onClick={enriquecerLusha} disabled={enriching}><I.sparkle size={10}/>{enriching ? '…' : 'Buscar Lusha'}</button>
+              <div><div className="card-title">Contatos</div><div className="card-sub">{contatos.length} no banco</div></div>
             </div>
             <div className="card-p" style={{padding:0}}>
               {loadingC && <div style={{padding:20, textAlign:'center', color:'hsl(var(--fg-muted))'}}>Carregando…</div>}
               {!loadingC && contatos.length === 0 && (
                 <div style={{padding:24, textAlign:'center'}}>
-                  <div className="muted" style={{marginBottom:10}}>Nenhum contato ainda.</div>
-                  <button className="btn btn-sm btn-accent" onClick={enriquecerLusha} disabled={enriching}>
-                    <I.sparkle size={12}/>{enriching ? 'Buscando…' : 'Enriquecer com Lusha'}
-                  </button>
+                  <div className="muted" style={{fontSize:12.5}}>Nenhum contato ainda. Use o card abaixo pra buscar no Lusha.</div>
                 </div>
               )}
               {contatos.map(p => (
@@ -244,34 +263,8 @@ function LeadDetail({ companyId, onBack }) {
             </div>
           </div>
 
-          {/* Candidates Lusha (lista pré-revelação) */}
+          {/* Lusha — único card de busca (search → reveal) */}
           <LushaCandidatesCard empresaId={c.id} onRevealed={loadContatos}/>
-
-          {/* Tabela completa de Contratos PNCP */}
-          <ContratosTable full={full}/>
-
-          {/* Distribuição UF + Lista Órgãos */}
-          <UfOrgaosGrid full={full}/>
-
-          {/* Timeline 360° */}
-          <TimelinePanel
-            items={timeline}
-            loading={loadingTl}
-            onReload={loadTimeline}
-            empresaId={c.id}
-          />
-        </div>
-
-        <div style={{display:'flex', flexDirection:'column', gap:'var(--gap)'}}>
-          <div className="card halo">
-            <div className="card-p" style={{textAlign:'center'}}>
-              <div className="card-section-title">Bradata Score</div>
-              <UI.ScoreRing value={c.score} size={100} stroke={8}/>
-              <div style={{marginTop:10, fontWeight:700, fontSize:13, color: c.score>=80?'hsl(var(--success))':c.score>=60?'hsl(var(--warning))':'hsl(var(--fg-muted))'}}>
-                {c.score >= 80 ? '🔥 Lead prioritário' : c.score >= 60 ? 'Potencial médio' : 'Baixa prioridade'}
-              </div>
-            </div>
-          </div>
 
           {deals.length>0 && (
             <div className="card">
