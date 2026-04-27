@@ -64,7 +64,7 @@ function Pipeline() {
     } catch (e) {
       // Reverte se falhou
       setDeals(prev => prev.map(d => d.id === dragId ? deal : d));
-      alert(`Falha ao mover: ${e.message}`);
+      window.toast.error(`Falha ao mover: ${e.message}`);
     }
   };
 

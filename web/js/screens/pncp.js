@@ -27,15 +27,27 @@ function _porteKey(p) {
   return m ? m.key : null;
 }
 
-// Calcula "lead heat" baseado em volume + classificação. Heurística
-// simples enquanto não temos data do contrato mais recente no payload.
+// Calcula "lead heat" baseado em DATA do último contrato + valor.
+// Quanto mais recente a vitória, mais quente o lead pra prospecção.
+function _diasDesdeUltimo(e) {
+  if (!e.ultimo_contrato_at) return null;
+  const ms = Date.now() - new Date(e.ultimo_contrato_at).getTime();
+  return Math.floor(ms / (1000 * 60 * 60 * 24));
+}
+
 function _leadHeat(e) {
-  const v = e.valor_total_contratos || 0;
-  const n = e.contracts_pncp || 0;
-  if (e.classificacao_valor === 'alto' && n >= 3) return { key: 'hot', label: '🔥 Quente', color: 'danger' };
-  if (e.classificacao_valor === 'alto' || n >= 5) return { key: 'warm', label: '🌡️ Morno', color: 'warn' };
-  if (n >= 1) return { key: 'cold', label: '❄️ Frio', color: 'info' };
-  return { key: 'none', label: '—', color: '' };
+  const dias = _diasDesdeUltimo(e);
+  // Sem data: cai no fallback por volume/classificação
+  if (dias === null) {
+    if (e.classificacao_valor === 'alto') return { key: 'warm', label: '🌡️ Morno', color: 'warn' };
+    if ((e.contracts_pncp || 0) >= 1) return { key: 'cold', label: '❄️ Frio', color: 'info' };
+    return { key: 'none', label: '—', color: '' };
+  }
+  // Lead heat baseado em recência da assinatura mais recente:
+  if (dias <= 30)  return { key: 'hot',   label: `🔥 ${dias}d`, color: 'danger' };
+  if (dias <= 90)  return { key: 'warm',  label: `🌡️ ${dias}d`, color: 'warn' };
+  if (dias <= 180) return { key: 'cold',  label: `❄️ ${dias}d`, color: 'info' };
+  return { key: 'frozen', label: `🧊 ${dias}d`, color: '' };
 }
 
 function PNCP() {
@@ -109,6 +121,11 @@ function PNCP() {
         case 'classif': {
           const ord = { alto: 3, medio: 2, baixo: 1 };
           cmp = (ord[a.classificacao_valor] || 0) - (ord[b.classificacao_valor] || 0); break;
+        }
+        case 'ultimo': {
+          const ta = a.ultimo_contrato_at ? new Date(a.ultimo_contrato_at).getTime() : 0;
+          const tb = b.ultimo_contrato_at ? new Date(b.ultimo_contrato_at).getTime() : 0;
+          cmp = ta - tb; break;
         }
         case 'uf': cmp = (a.uf || '').localeCompare(b.uf || ''); break;
         case 'icp': cmp = (a.icp_score || 0) - (b.icp_score || 0); break;
@@ -298,6 +315,7 @@ function _PNCPTable({ fmt, loading, paginated, filtered, sortField, sortOrder, h
               <th>Porte</th>
               <SortHeader field="contratos" current={sortField} order={sortOrder} onSort={handleSort} align="right">Contratos</SortHeader>
               <SortHeader field="valor" current={sortField} order={sortOrder} onSort={handleSort} align="right">Valor Total</SortHeader>
+              <SortHeader field="ultimo" current={sortField} order={sortOrder} onSort={handleSort}>Último</SortHeader>
               <SortHeader field="classif" current={sortField} order={sortOrder} onSort={handleSort}>Classificação</SortHeader>
               <th>Lead Heat</th>
               <SortHeader field="icp" current={sortField} order={sortOrder} onSort={handleSort}>ICP</SortHeader>
@@ -306,14 +324,14 @@ function _PNCPTable({ fmt, loading, paginated, filtered, sortField, sortOrder, h
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan="11" style={{padding:24}}>
+              <tr><td colSpan="12" style={{padding:24}}>
                 <div style={{display:'flex', flexDirection:'column', gap:10}}>
                   {[0,1,2,3,4].map(i => <Skeleton key={i} height={28}/>)}
                 </div>
               </td></tr>
             )}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan="11" style={{textAlign:'center', padding:48, color:'hsl(var(--fg-muted))'}}>
+              <tr><td colSpan="12" style={{textAlign:'center', padding:48, color:'hsl(var(--fg-muted))'}}>
                 {hasFilters
                   ? 'Nenhum fornecedor bate os filtros. Tente afrouxar a busca.'
                   : 'Nenhum fornecedor descoberto via PNCP ainda. Dispare uma ingestão em Execuções.'}
@@ -498,6 +516,9 @@ function _PNCPRow({ e, fmt, isSelected, onToggle }) {
       <td className="mono" style={{textAlign:'right', fontWeight:700, color:'hsl(var(--b-accent))'}}>
         {fmt.brlK(e.valor_total_contratos || 0)}
       </td>
+      <td className="muted" style={{fontSize:11.5}}>
+        {e.ultimo_contrato_at ? fmt.relative(e.ultimo_contrato_at) : <span className="faint">—</span>}
+      </td>
       <td>
         <span className={`chip ${classif.color}`}>{classif.label}</span>
       </td>
@@ -574,12 +595,12 @@ function _PNCPStats({ fmt, stats, classifFilter, setClassifFilter, heatFilter, s
         icon={<I.building size={12}/>}
       />
       <_PNCPStatCard
-        label="Quentes 🔥" value={stats.hot} sub="Alto valor + 3+ contratos"
+        label="Quentes 🔥" value={stats.hot} sub="Contrato nos últimos 30d"
         color="danger" active={heatFilter === 'hot'}
         onClick={() => { setHeatFilter(heatFilter === 'hot' ? null : 'hot'); setPage(1); }}
       />
       <_PNCPStatCard
-        label="Mornos 🌡️" value={stats.warm} sub="Alto valor ou 5+ contratos"
+        label="Mornos 🌡️" value={stats.warm} sub="Contrato 31-90 dias"
         color="warning" active={heatFilter === 'warm'}
         onClick={() => { setHeatFilter(heatFilter === 'warm' ? null : 'warm'); setPage(1); }}
       />

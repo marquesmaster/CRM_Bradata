@@ -107,7 +107,7 @@ function Accounts() {
   };
 
   const handleExport = () => {
-    if (filtered.length === 0) { alert('Nada para exportar'); return; }
+    if (filtered.length === 0) { window.toast.warn('Nada para exportar'); return; }
     const headers = ['Nome','CNPJ','Setor','Porte','Faixa Faturamento','Contratos','Valor Total','Classificação','UF','Score ICP','Status'];
     const rows = filtered.map(f => [
       f.name || '', f.cnpj || '', f.sector || '', f.porte || '',
@@ -141,8 +141,8 @@ function Accounts() {
             if (!confirm('Enriquecer todas empresas sem website (CNPJ.WS, ~2/s)?')) return;
             try {
               const r = await window.API.api('/empresas/enriquecer-pendentes?limit=500', { method: 'POST' });
-              alert(r.message + '\nAcompanhe nos logs. Em alguns minutos, recarregue.');
-            } catch (e) { alert(e.message); }
+              window.toast.success(r.message + ' (acompanhe nos logs)', 6000);
+            } catch (e) { window.toast.error(e.message); }
           }}><I.refresh size={12}/>Enriquecer pendentes</button>
           <span className="chip">{filtered.length} fornecedores</span>
         </div>

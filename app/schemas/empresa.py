@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -99,6 +99,7 @@ class EmpresaOut(EmpresaBase):
     valor_total_contratos: float = 0.0
     classificacao_valor: str = "baixo"       # alto | medio | baixo
     faixa_faturamento: str | None = None     # "Até R$ 81 mil" etc.
+    ultimo_contrato_at: date | None = None  # data_resultado mais recente em PncpResultado
 
 
 class EmpresaFilter(BaseModel):

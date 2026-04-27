@@ -21,7 +21,7 @@ function Documentos() {
     try {
       await window.API.api(`/documentos/templates/${t.id}`, { method: 'DELETE' });
       load();
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
   };
 
   const removeDoc = async (d) => {
@@ -29,7 +29,7 @@ function Documentos() {
     try {
       await window.API.api(`/documentos/${d.id}`, { method: 'DELETE' });
       load();
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
   };
 
   const kindIcon = { contrato: '📄', proposta: '📋', aditivo: '✏️', nda: '🔒', outro: '📁' };

@@ -122,14 +122,14 @@ function ContratoDetail({ contratoId, onBack }) {
         const res = await window.API.api(`/pncp/itens/${it.id}/resultados`);
         setResultados(prev => [...prev, ...(res || [])]);
       }
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
   };
 
   const classificarIa = async () => {
     try {
       const r = await window.API.api(`/pncp/contratos/${contratoId}/classificar-ia`, { method: 'POST' });
       setC(prev => ({ ...prev, ...r }));
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
   };
 
   if (loading) return <div style={{padding:40, textAlign:'center', color:'hsl(var(--fg-muted))'}}>Carregando…</div>;

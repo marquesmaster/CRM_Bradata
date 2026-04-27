@@ -265,7 +265,7 @@ function CloseDealModal({ deal, onClose, onSaved }) {
         }),
       });
       onSaved(r);
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
     finally { setBusy(false); }
   };
 

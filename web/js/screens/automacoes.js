@@ -21,7 +21,7 @@ function Automacoes() {
         method: 'PATCH', body: JSON.stringify({ ativo: !a.ativo }),
       });
       setItems(xs => xs.map(x => x.id===a.id ? r : x));
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
   };
 
   const remove = async (a) => {
@@ -29,7 +29,7 @@ function Automacoes() {
     try {
       await window.API.api(`/automacoes/${a.id}`, { method: 'DELETE' });
       setItems(xs => xs.filter(x => x.id !== a.id));
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
   };
 
   const runCadenciaNow = async () => {
@@ -37,8 +37,8 @@ function Automacoes() {
     setRunning(true);
     try {
       await window.API.api('/automacoes/cadencia/run-now', { method: 'POST' });
-      alert('Cadência agendada em background. Veja os logs / atividades nos próximos minutos.');
-    } catch (e) { alert(e.message); }
+      window.toast.success('Cadência agendada — veja logs e atividades', 6000);
+    } catch (e) { window.toast.error(e.message); }
     finally { setRunning(false); }
   };
 
@@ -185,7 +185,7 @@ function SequencerModal({ cadencia, onClose }) {
       await window.API.api('/automacoes/cadencia/run-now', { method: 'POST' });
       // Espera 2s e recarrega o estado
       setTimeout(load, 3000);
-    } catch (e) { alert(e.message); setRunning(false); }
+    } catch (e) { window.toast.error(e.message); setRunning(false); }
     finally { setTimeout(()=>setRunning(false), 3000); }
   };
 

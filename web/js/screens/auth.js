@@ -15,7 +15,7 @@ function LoginScreen({ onLoggedIn }) {
           window.API.refresh().then(() => onLoggedIn(user));
         });
       } else if (e.data.error) {
-        alert(e.data.error);
+        window.toast.error(e.data.error);
       }
     };
     window.addEventListener('message', onMsg);
@@ -28,7 +28,7 @@ function LoginScreen({ onLoggedIn }) {
       const { url } = await window.API.api('/auth/google/signin');
       window.open(url, 'google-signin', 'width=540,height=680');
     } catch (e) {
-      alert(e.message);
+      window.toast.error(e.message);
     } finally {
       setBusy(false);
     }

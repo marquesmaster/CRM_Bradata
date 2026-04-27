@@ -50,20 +50,22 @@ def _serialize(db, empresa: Empresa) -> EmpresaOut:
     contatos_n = (
         db.query(func.count(Contato.id)).filter(Contato.empresa_id == empresa.id).scalar() or 0
     )
-    contracts_pncp, valor_total = (
+    contracts_pncp, valor_total, ultimo = (
         db.query(
             func.count(PncpResultado.id),
             func.coalesce(func.sum(PncpResultado.valor_total_homologado), 0),
+            func.max(PncpResultado.data_resultado),
         )
         .filter(PncpResultado.empresa_id == empresa.id)
         .first()
-    ) or (0, 0)
+    ) or (0, 0, None)
     out = EmpresaOut.model_validate(empresa)
     out.contatos_n = int(contatos_n)
     out.contracts_pncp = int(contracts_pncp or 0)
     out.valor_total_contratos = float(valor_total or 0)
     out.classificacao_valor = _classificacao_por_valor(valor_total, empresa.ticket_medio)
     out.faixa_faturamento = _faixa_faturamento(empresa.faturamento_estimado)
+    out.ultimo_contrato_at = ultimo
     return out
 
 

@@ -102,7 +102,7 @@ function Chat() {
         method:'POST',
         body: { conteudo: text },
       });
-    } catch (e) { setDraft(text); alert(e.message); }
+    } catch (e) { setDraft(text); window.toast.error(e.message); }
   };
 
   const sendTyping = () => {
@@ -125,7 +125,7 @@ function Chat() {
       });
       refreshChannels();
       openChannel(ch.id);
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
   };
 
   const startGroup = () => {
@@ -139,7 +139,7 @@ function Chat() {
     window.API.api('/chat/channels', {
       method:'POST',
       body: { kind: 'group', nome, member_ids },
-    }).then(ch => { refreshChannels(); openChannel(ch.id); }).catch(e => alert(e.message));
+    }).then(ch => { refreshChannels(); openChannel(ch.id); }).catch(e => window.toast.error(e.message));
   };
 
   const active = channels.find(c => c.id === activeId);

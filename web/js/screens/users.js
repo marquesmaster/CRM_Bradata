@@ -39,21 +39,21 @@ function Users() {
   counts.pendentes = users.filter(u => u.status === 'pendente').length;
 
   const toggleStatus = async (u) => {
-    if (u.id === String(window.DATA.CURRENT_USER.id)) { alert('Não pode desativar a si mesmo'); return; }
+    if (u.id === String(window.DATA.CURRENT_USER.id)) { window.toast.warn('Não pode desativar a si mesmo'); return; }
     try {
       await window.API.api(`/users/${u.id}`, {
         method: 'PATCH',
         body: { status: u.status === 'ativo' ? 'inativo' : 'ativo', is_active: u.status !== 'ativo' },
       });
       load();
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
   };
 
   const changeRole = async (u, newRole) => {
     try {
       await window.API.api(`/users/${u.id}`, { method: 'PATCH', body: { role: newRole } });
       load();
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
   };
 
   return (

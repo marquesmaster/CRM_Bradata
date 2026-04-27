@@ -181,7 +181,7 @@ function TicketModal({ ticket, team, onClose, onSaved }) {
       });
       setComments(prev => [...prev, c]);
       setDraft('');
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
   };
 
   return (

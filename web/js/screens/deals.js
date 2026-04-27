@@ -37,7 +37,7 @@ function Deals() {
     try {
       await window.API.api(`/oportunidades/${deal.id}`, { method: 'DELETE' });
       reload();
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
   };
 
   return (

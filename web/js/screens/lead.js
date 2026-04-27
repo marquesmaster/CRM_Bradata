@@ -436,7 +436,7 @@ function TimelinePanel({ items, loading, onReload, empresaId }) {
       });
       setDraft('');
       onReload();
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
     finally { setSaving(false); }
   };
 
@@ -1522,7 +1522,7 @@ function LushaCandidatesCard({ empresaId, onRevealed }) {
       load();
       onRevealed?.();
     } catch (e) {
-      alert(e.message);
+      window.toast.error(e.message);
     } finally {
       setRevealingIds(prev => { const s = new Set(prev); s.delete(cand.id); return s; });
     }
@@ -1544,7 +1544,7 @@ function LushaCandidatesCard({ empresaId, onRevealed }) {
       });
       load();
       onRevealed?.();
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
     finally { setRevealingIds(new Set()); }
   };
 

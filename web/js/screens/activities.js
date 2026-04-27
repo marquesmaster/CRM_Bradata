@@ -42,7 +42,7 @@ function Activities() {
       });
     } catch (e) {
       setItems(prev => prev.map(x => x.id === a.id ? a : x));
-      alert(e.message);
+      window.toast.error(e.message);
     }
   };
 
@@ -51,7 +51,7 @@ function Activities() {
     try {
       await window.API.api(`/atividades/${a.id}`, { method: 'DELETE' });
       load();
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
   };
 
   const pendentes = items.filter(a => a.status === 'pendente').length;

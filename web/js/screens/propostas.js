@@ -105,7 +105,7 @@ function NewPropostaModal({ defaultDealId, onClose, onCreated }) {
         },
       });
       onCreated();
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
   };
 
   return (
@@ -156,7 +156,7 @@ function PropostaDetail({ propostaId, onBack }) {
     try {
       const r = await window.API.api(`/propostas/${propostaId}`, { method: 'PATCH', body: patch });
       setP(r);
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
   };
 
   if (loading) return <div style={{padding:40, textAlign:'center'}}>Carregando…</div>;

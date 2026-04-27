@@ -79,7 +79,13 @@ function Execucoes() {
                 <td className="mono">{r.contratos_ok}/{r.contratos_a_processar} {r.contratos_com_erro > 0 && <span style={{color:'hsl(var(--danger))'}}>· {r.contratos_com_erro} erros</span>}</td>
                 <td className="mono">{r.empresas_sincronizadas}</td>
                 <td className="mono">{r.ai_processados}</td>
-                <td><button className="btn btn-xs btn-ghost" onClick={()=>alert(JSON.stringify(r.resumo || r, null, 2))}>Ver</button></td>
+                <td><button className="btn btn-xs btn-ghost" onClick={() => {
+                  const txt = JSON.stringify(r.resumo || r, null, 2);
+                  navigator.clipboard.writeText(txt).then(
+                    () => window.toast.success('Resumo copiado para o clipboard'),
+                    () => { console.log(txt); window.toast.info('Resumo no console (clipboard indisponível)'); }
+                  );
+                }}>Ver</button></td>
               </tr>
             ))}
           </tbody>

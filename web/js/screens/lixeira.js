@@ -19,7 +19,7 @@ function Lixeira() {
     try {
       await window.API.api(`/lixeira/${it.entity_type}/${it.entity_id}/restore`, { method: 'POST' });
       load();
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
   };
 
   const entityIcon = {
