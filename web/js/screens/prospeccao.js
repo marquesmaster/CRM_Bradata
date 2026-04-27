@@ -112,7 +112,7 @@ function ProspeccaoDetail({ leadId, onBack }) {
     try {
       const r = await window.API.api(`/leads/${leadId}`, { method: 'PATCH', body: { status: novoStatus } });
       setLead(r);
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
   };
 
   if (loading) return <div style={{padding:40, textAlign:'center'}}>Carregando…</div>;
@@ -175,8 +175,9 @@ function ConvertLeadModal({ lead, onClose, onDone }) {
           valor_estimado: valor ? Number(valor) : null,
         },
       });
+      window.toast.success('Lead convertido em oportunidade');
       onDone(op);
-    } catch (e) { alert(e.message); }
+    } catch (e) { window.toast.error(e.message); }
   };
 
   return (

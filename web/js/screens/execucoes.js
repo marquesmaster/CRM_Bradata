@@ -38,9 +38,9 @@ function Execucoes() {
             if (!confirm('Classificar com IA todos os contratos ainda não classificados? (lotes de 30)')) return;
             try {
               const r = await window.API.api('/pncp/classificar-batch?batch_size=30', { method: 'POST' });
-              alert(r.message);
+              window.toast.success(r.message || 'Classificação em batch agendada');
               load();
-            } catch (e) { alert(e.message); }
+            } catch (e) { window.toast.error(e.message); }
           }}><I.sparkle size={12}/>Classificar IA em batch</button>
           <button className="btn btn-accent btn-sm" onClick={()=>setShowModal(true)}><I.plus size={12}/>Nova execução</button>
         </div>
@@ -147,9 +147,10 @@ function NewEtlModal({ onClose, onCreated }) {
           classify_with_ai: classifyAi,
         },
       });
+      window.toast.success('ETL PNCP agendado em background');
       onCreated();
     } catch (e) {
-      alert(e.message);
+      window.toast.error(e.message);
     } finally {
       setSubmitting(false);
     }

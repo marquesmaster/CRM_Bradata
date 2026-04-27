@@ -81,9 +81,48 @@ function Boot() {
   return <App onLogout={() => { window.API.auth.clear(); setAuthed(false); }}/>;
 }
 
+// Mapeia route → nome do parâmetro escalar (quando __nav('lead', 123)).
+const ROUTE_PARAM_MAP = {
+  lead: 'companyId',
+  contrato: 'contratoId',
+  prospeccaoDetail: 'leadId',
+  proposta: 'propostaId',
+  historico: 'cnpjOrId',
+  propostas: 'dealId',
+};
+
+function _buildHash(r, arg) {
+  let h = '#' + r;
+  if (arg == null) return h;
+  if (typeof arg === 'object') {
+    const usp = new URLSearchParams();
+    Object.entries(arg).forEach(([k, v]) => { if (v != null && v !== '') usp.set(k, String(v)); });
+    const s = usp.toString();
+    return s ? `${h}?${s}` : h;
+  }
+  return `${h}/${encodeURIComponent(arg)}`;
+}
+
+function _parseHash() {
+  const raw = (location.hash || '').replace(/^#/, '');
+  if (!raw) return { route: localStorage.getItem('bradata-route') || 'dashboard', params: {} };
+  const [routePart, queryPart] = raw.split('?');
+  const [r, idArg] = routePart.split('/');
+  const route = r || 'dashboard';
+  let params = {};
+  if (queryPart) {
+    new URLSearchParams(queryPart).forEach((v, k) => { params[k] = v; });
+  } else if (idArg !== undefined && idArg !== '') {
+    const paramName = ROUTE_PARAM_MAP[route] || 'id';
+    params = { [paramName]: decodeURIComponent(idArg) };
+  }
+  return { route, params };
+}
+
 function App({ onLogout }) {
-  const [route, setRoute] = React.useState(() => localStorage.getItem('bradata-route') || 'dashboard');
-  const [params, setParams] = React.useState({});
+  const _initial = React.useMemo(_parseHash, []);
+  const [route, setRoute] = React.useState(_initial.route);
+  const [params, setParams] = React.useState(_initial.params);
   const [theme, setTheme] = React.useState(() => localStorage.getItem('bradata-theme') || 'light');
   const [collapsed, setCollapsed] = React.useState(false);
   const [aiOpen, setAiOpen] = React.useState(false);
@@ -98,6 +137,15 @@ function App({ onLogout }) {
   React.useEffect(() => { localStorage.setItem('bradata-route', route); }, [route]);
   React.useEffect(() => { localStorage.setItem('bradata-theme', theme); }, [theme]);
   React.useEffect(() => { localStorage.setItem('bradata-nav-sections', JSON.stringify(collapsedSections)); }, [collapsedSections]);
+
+  // Sincroniza state ← URL: voltar/avançar do browser, refresh, deep-link.
+  React.useEffect(() => {
+    const sync = () => { const p = _parseHash(); setRoute(p.route); setParams(p.params); };
+    // Garante que a URL inicial tenha o hash pra refresh preservar a tela.
+    if (!location.hash) location.hash = _buildHash(route, null);
+    window.addEventListener('hashchange', sync);
+    return () => window.removeEventListener('hashchange', sync);
+  }, []);
 
   const toggleSection = (name) => setCollapsedSections(s => ({...s, [name]: !s[name]}));
 
@@ -117,21 +165,16 @@ function App({ onLogout }) {
     return () => clearInterval(t);
   }, [route]);
 
-  // Roteador simples: window.__nav(route, arg) ou window.__nav(route, {param: value})
+  // Roteador via hash: __nav('lead', 123) → #lead/123 ; __nav('pncp', {uf:'SP'}) → #pncp?uf=SP
+  // O hashchange (useEffect acima) é quem atualiza state — assim back/forward do browser funcionam.
   window.__nav = (r, arg) => {
-    setRoute(r);
-    if (arg == null) { setParams({}); }
-    else if (typeof arg === 'object') { setParams(arg); }
-    else {
-      const paramName =
-        r === 'lead'           ? 'companyId'
-      : r === 'contrato'       ? 'contratoId'
-      : r === 'prospeccaoDetail' ? 'leadId'
-      : r === 'proposta'       ? 'propostaId'
-      : r === 'historico'      ? 'cnpjOrId'
-      : r === 'propostas'      ? 'dealId'
-      : 'id';
-      setParams({ [paramName]: arg });
+    const newHash = _buildHash(r, arg);
+    if (location.hash === newHash) {
+      // Hash já é igual: força sync do state mesmo assim (caso de re-clicar mesmo item).
+      const p = _parseHash();
+      setRoute(p.route); setParams(p.params);
+    } else {
+      location.hash = newHash;
     }
   };
 
@@ -302,10 +345,13 @@ function App({ onLogout }) {
           </div>
         </header>
         <main className="main-content">
-          {renderScreen()}
+          <ErrorBoundary key={route} onReset={() => window.__nav('dashboard')}>
+            {renderScreen()}
+          </ErrorBoundary>
         </main>
       </div>
       <AIChat externalOpen={aiOpen} onClose={()=>setAiOpen(false)}/>
+      <ToastHost/>
     </div>
   );
 }
