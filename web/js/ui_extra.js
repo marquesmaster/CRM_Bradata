@@ -236,6 +236,32 @@ class ErrorBoundary extends React.Component {
 }
 window.ErrorBoundary = ErrorBoundary;
 
+// ============ Body-scroll lock + Esc enquanto qualquer modal estiver aberto ============
+// Conta quantos modais estão montados; ativa lock só quando há ao menos um.
+let _modalCount = 0;
+function _applyBodyLock() {
+  if (_modalCount > 0) document.body.style.overflow = 'hidden';
+  else document.body.style.overflow = '';
+}
+// Auto-instala um observer global que detecta .modal-backdrop entrando/saindo do DOM
+// e fecha qualquer modal aberto ao apertar Esc (clicando o backdrop, que já tem onClick
+// de fechar nas telas; aqui só sincroniza o lock e oferece atalho).
+if (typeof MutationObserver !== 'undefined' && !window.__modalObserverInstalled) {
+  window.__modalObserverInstalled = true;
+  const recount = () => {
+    _modalCount = document.querySelectorAll('.modal-backdrop').length;
+    _applyBodyLock();
+  };
+  new MutationObserver(recount).observe(document.body, { childList: true, subtree: true });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const backdrops = document.querySelectorAll('.modal-backdrop');
+    if (!backdrops.length) return;
+    // Fecha o último (topo da pilha) simulando click no backdrop.
+    backdrops[backdrops.length - 1].click();
+  });
+}
+
 // ============ useApi (loading/error/refetch + abort) ============
 function useApi(path, { enabled = true, deps = [] } = {}) {
   const [state, setState] = React.useState({ data: null, loading: !!enabled, error: null });
