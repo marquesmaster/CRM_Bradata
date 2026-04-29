@@ -70,8 +70,14 @@ function DashboardExecutive() {
           {loadingA && <span className="chip">calculando…</span>}
         </div>
         <div className="card-p">
-          {!a && loadingA && <div style={{padding:20, textAlign:'center', color:'hsl(var(--fg-muted))'}}>Carregando métricas…</div>}
-          {!a && !loadingA && <div style={{padding:20, textAlign:'center', color:'hsl(var(--fg-muted))'}}>Sem métricas ainda — crie deals para ver.</div>}
+          {!a && loadingA && (
+            <div style={{padding:18, display:'flex', flexDirection:'column', gap:10}}>
+              {Array.from({length:3}).map((_,i) => <Skeleton key={i} height={48}/>)}
+            </div>
+          )}
+          {!a && !loadingA && (
+            <EmptyState compact icon={<I.chart size={18}/>} title="Sem métricas ainda" description="Crie deals para popular o dashboard."/>
+          )}
           {a && <>
             {/* Financeiro */}
             <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))', gap:12, marginBottom:16}}>

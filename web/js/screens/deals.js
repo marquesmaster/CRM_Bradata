@@ -83,10 +83,15 @@ function Deals() {
             <th>Deal</th><th>Empresa</th><th>Estágio</th><th>Valor</th><th>Prob.</th><th>Fechamento</th><th>Status</th><th></th>
           </tr></thead>
           <tbody>
-            {loading && <tr><td colSpan="8" style={{textAlign:'center', padding:24}} className="muted">Carregando…</td></tr>}
+            {loading && <TableLoading rows={6} cols={8}/>}
             {!loading && items.length === 0 && (
-              <tr><td colSpan="8" style={{textAlign:'center', padding:32, color:'hsl(var(--fg-muted))'}}>
-                Nenhum deal com esses filtros. <button className="btn btn-xs btn-accent" style={{marginLeft:8}} onClick={()=>setEditing({})}>Criar agora</button>
+              <tr><td colSpan="8" style={{padding:0}}>
+                <EmptyState
+                  icon={<I.money size={22}/>}
+                  title="Nenhum deal encontrado"
+                  description="Crie sua primeira oportunidade ou ajuste os filtros."
+                  action={<button className="btn btn-accent btn-sm" onClick={()=>setEditing({})}><I.plus size={11}/>Criar deal</button>}
+                />
               </td></tr>
             )}
             {items.map(d => {

@@ -79,14 +79,18 @@ function Tickets() {
       </div>
 
       <div className="card">
-        {loading && <div className="muted" style={{padding:24, textAlign:'center'}}>Carregando…</div>}
-        {!loading && items.length === 0 && (
-          <div style={{padding:32, textAlign:'center'}}>
-            <div className="muted">Nenhum ticket com esses filtros.</div>
-            <button className="btn btn-sm btn-accent" style={{marginTop:10}} onClick={()=>setEditing({})}>
-              <I.plus size={12}/>Criar agora
-            </button>
+        {loading && (
+          <div style={{padding:'14px 18px', display:'flex', flexDirection:'column', gap:10}}>
+            {Array.from({length:5}).map((_,i) => <Skeleton key={i} height={56}/>)}
           </div>
+        )}
+        {!loading && items.length === 0 && (
+          <EmptyState
+            icon={<I.help size={22}/>}
+            title="Nenhum ticket"
+            description="Ajuste os filtros ou crie o primeiro ticket."
+            action={<button className="btn btn-accent btn-sm" onClick={()=>setEditing({})}><I.plus size={11}/>Novo ticket</button>}
+          />
         )}
         {!loading && items.length > 0 && (
           <table className="table">

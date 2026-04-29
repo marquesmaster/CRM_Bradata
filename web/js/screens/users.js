@@ -102,8 +102,12 @@ function Users() {
             <th style={{width:60}}>ID</th><th>Usuário</th><th>Papel</th><th>Time</th><th>Status</th><th>Último acesso</th><th></th>
           </tr></thead>
           <tbody>
-            {loading && <tr><td colSpan="7" style={{textAlign:'center', padding:32, color:'hsl(var(--fg-muted))'}}>Carregando…</td></tr>}
-            {!loading && filtered.length === 0 && <tr><td colSpan="7" style={{textAlign:'center', padding:32, color:'hsl(var(--fg-muted))'}}>Nenhum usuário.</td></tr>}
+            {loading && <TableLoading rows={5} cols={7}/>}
+            {!loading && filtered.length === 0 && (
+              <tr><td colSpan="7" style={{padding:0}}>
+                <EmptyState icon={<I.users size={22}/>} title="Nenhum usuário" description="Convide um membro do time para começar."/>
+              </td></tr>
+            )}
             {filtered.map(u => {
               const isYou = u.id === String(window.DATA.CURRENT_USER.id);
               const role = ROLES[u.role] || { label: u.role, color: '#6B7280' };

@@ -122,7 +122,7 @@ function Agenda() {
       <div className="card">
         <div className="card-head">
           <div className="card-title" style={{textTransform:'capitalize'}}>{viewLabel}</div>
-          {loading && <span className="muted" style={{fontSize:11}}>Carregando…</span>}
+          {loading && <LoadingDots/>}
         </div>
         <div className="card-p">
           <div style={{display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:6, fontSize:10, textTransform:'uppercase', color:'hsl(var(--fg-muted))', marginBottom:8, fontWeight:600}}>

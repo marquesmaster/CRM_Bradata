@@ -53,11 +53,17 @@ function Lixeira() {
       </div>
 
       <div className="card">
-        {loading && <div className="muted" style={{padding:24, textAlign:'center'}}>Carregando…</div>}
-        {!loading && items.length === 0 && (
-          <div className="muted" style={{padding:32, textAlign:'center'}}>
-            🗑️ Lixeira vazia. Tudo que foi excluído pode ser restaurado aqui.
+        {loading && (
+          <div style={{padding:'14px 18px', display:'flex', flexDirection:'column', gap:10}}>
+            {Array.from({length:4}).map((_,i) => <Skeleton key={i} height={48}/>)}
           </div>
+        )}
+        {!loading && items.length === 0 && (
+          <EmptyState
+            icon={<I.x size={22}/>}
+            title="Lixeira vazia"
+            description="Tudo que for excluído aparece aqui — você pode restaurar a qualquer momento."
+          />
         )}
         {!loading && items.length > 0 && (
           <table className="table">

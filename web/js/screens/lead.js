@@ -230,7 +230,7 @@ function LeadDetail({ companyId, onBack }) {
               <div><div className="card-title">Contatos</div><div className="card-sub">{contatos.length} no banco</div></div>
             </div>
             <div className="card-p" style={{padding:0}}>
-              {loadingC && <div style={{padding:20, textAlign:'center', color:'hsl(var(--fg-muted))'}}>Carregando…</div>}
+              {loadingC && <LoadingDots/>}
               {!loadingC && contatos.length === 0 && (
                 <div style={{padding:24, textAlign:'center'}}>
                   <div className="muted" style={{fontSize:12.5}}>Nenhum contato ainda. Use o card abaixo pra buscar no Lusha.</div>
@@ -506,7 +506,7 @@ function TimelinePanel({ items, loading, onReload, empresaId }) {
       )}
 
       <div style={{padding:0, maxHeight:600, overflowY:'auto'}}>
-        {loading && <div style={{padding:20, textAlign:'center'}} className="muted">Carregando…</div>}
+        {loading && <LoadingDots/>}
         {!loading && filtered.length === 0 && (
           <div style={{padding:24, textAlign:'center'}} className="muted">
             Nenhum evento ainda. Comece adicionando uma nota acima.
@@ -654,7 +654,7 @@ function CnpjSummaryCard({ full, loading, onRefresh }) {
   if (loading && !full) {
     return (
       <div className="card" style={{padding:14, marginBottom:'var(--gap)'}}>
-        <div className="muted" style={{fontSize:12.5, textAlign:'center'}}>Carregando dados do CNPJ…</div>
+        <LoadingDots color="b-accent"/>
       </div>
     );
   }
@@ -1608,7 +1608,7 @@ function LushaCandidatesCard({ empresaId, onRevealed }) {
           </div>
 
           <div style={{maxHeight:480, overflowY:'auto'}}>
-            {loading && <div className="muted" style={{padding:20, textAlign:'center'}}>Carregando…</div>}
+            {loading && <LoadingDots/>}
             {!loading && filtered.length === 0 && (
               <div className="muted" style={{padding:20, textAlign:'center', fontSize:13}}>
                 Nenhum candidato com esses filtros.

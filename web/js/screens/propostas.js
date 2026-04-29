@@ -59,8 +59,12 @@ function Propostas({ dealId }) {
             <th>#</th><th>Título</th><th>Deal</th><th>Empresa</th><th>Valor</th><th>Status</th><th>Enviada</th><th>Validade</th><th></th>
           </tr></thead>
           <tbody>
-            {loading && <tr><td colSpan="9" style={{textAlign:'center', padding:32, color:'hsl(var(--fg-muted))'}}>Carregando…</td></tr>}
-            {!loading && filtered.length === 0 && <tr><td colSpan="9" style={{textAlign:'center', padding:32, color:'hsl(var(--fg-muted))'}}>Nenhuma proposta.</td></tr>}
+            {loading && <TableLoading rows={6} cols={9}/>}
+            {!loading && filtered.length === 0 && (
+              <tr><td colSpan="9" style={{padding:0}}>
+                <EmptyState icon={<I.doc size={22}/>} title="Nenhuma proposta" description="Gere sua primeira proposta a partir de um deal."/>
+              </td></tr>
+            )}
             {filtered.map(p => {
               const deal = dealTitles[String(p.oportunidade_id)];
               const empresa = deal ? COMPANIES[deal.company] : null;
@@ -159,7 +163,13 @@ function PropostaDetail({ propostaId, onBack }) {
     } catch (e) { window.toast.error(e.message); }
   };
 
-  if (loading) return <div style={{padding:40, textAlign:'center'}}>Carregando…</div>;
+  if (loading) return (
+    <div className="card" style={{padding:24, display:'flex', flexDirection:'column', gap:12}}>
+      <Skeleton height={28} width="55%"/>
+      <Skeleton height={14} width="35%"/>
+      {Array.from({length:6}).map((_,i) => <Skeleton key={i} height={48}/>)}
+    </div>
+  );
   if (!p) return <div className="card" style={{padding:20}}>Proposta não encontrada. <button className="btn btn-xs btn-ghost" onClick={onBack}>Voltar</button></div>;
 
   const deal = DEALS.find(d => String(d.id) === String(p.oportunidade_id));

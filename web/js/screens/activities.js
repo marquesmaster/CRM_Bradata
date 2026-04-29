@@ -102,14 +102,18 @@ function Activities() {
       </div>
 
       <div className="card">
-        {loading && <div className="muted" style={{padding:24, textAlign:'center'}}>Carregando…</div>}
-        {!loading && items.length === 0 && (
-          <div style={{padding:32, textAlign:'center'}}>
-            <div className="muted">Nenhuma atividade com esses filtros.</div>
-            <button className="btn btn-sm btn-accent" style={{marginTop:10}} onClick={()=>setEditing({})}>
-              <I.plus size={12}/>Criar agora
-            </button>
+        {loading && (
+          <div style={{padding:'14px 18px', display:'flex', flexDirection:'column', gap:10}}>
+            {Array.from({length:5}).map((_,i) => <Skeleton key={i} height={60}/>)}
           </div>
+        )}
+        {!loading && items.length === 0 && (
+          <EmptyState
+            icon={<I.check size={22}/>}
+            title="Nenhuma atividade encontrada"
+            description="Crie a primeira atividade ou ajuste os filtros para ver mais."
+            action={<button className="btn btn-accent btn-sm" onClick={()=>setEditing({})}><I.plus size={11}/>Nova atividade</button>}
+          />
         )}
         {!loading && items.map((a, i) => {
           const isOverdue = a.due_date && new Date(a.due_date) < new Date() && a.status !== 'concluida';

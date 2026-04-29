@@ -36,7 +36,15 @@ function Reports() {
   if (loading) return (
     <>
       <div className="page-head"><h1 className="page-title">Relatórios & Analytics</h1></div>
-      <div className="muted" style={{textAlign:'center', padding:32}}>Carregando dados…</div>
+      <div className="grid-3" style={{gap:'var(--gap)'}}>
+        {Array.from({length:6}).map((_,i) => (
+          <div key={i} className="card" style={{padding:18, display:'flex', flexDirection:'column', gap:10}}>
+            <Skeleton height={14} width="40%"/>
+            <Skeleton height={32} width="60%"/>
+            <Skeleton height={80}/>
+          </div>
+        ))}
+      </div>
     </>
   );
 

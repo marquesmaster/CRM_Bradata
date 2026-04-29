@@ -24,7 +24,11 @@ function Historico({ cnpjOrId, onBack }) {
     }
   }, [cnpjOrId]);
 
-  if (loading) return <div style={{padding:40, textAlign:'center', color:'hsl(var(--fg-muted))'}}>Carregando…</div>;
+  if (loading) return (
+    <div className="card" style={{padding:24, display:'flex', flexDirection:'column', gap:10}}>
+      {Array.from({length:8}).map((_,i) => <Skeleton key={i} height={36}/>)}
+    </div>
+  );
   if (!empresa) return <div className="card" style={{padding:20}}>Empresa não encontrada. <button className="btn btn-xs btn-ghost" onClick={onBack}>Voltar</button></div>;
 
   const eventos = [

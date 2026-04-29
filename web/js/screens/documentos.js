@@ -48,18 +48,26 @@ function Documentos() {
         </div>
       </div>
 
-      {loading && <div className="muted" style={{padding:32, textAlign:'center'}}>Carregando…</div>}
+      {loading && (
+        <div className="grid-2">
+          {Array.from({length:4}).map((_,i) => (
+            <div key={i} className="card" style={{padding:18, display:'flex', flexDirection:'column', gap:10}}>
+              <Skeleton height={20} width="60%"/>
+              <Skeleton height={12} width="80%"/>
+              <Skeleton height={12} width="40%"/>
+            </div>
+          ))}
+        </div>
+      )}
 
       {!loading && templates.length === 0 && (
-        <div className="card empty-state" style={{padding:60, textAlign:'center'}}>
-          <div style={{fontSize:40, marginBottom:12}}>📄</div>
-          <h3 style={{margin:'0 0 6px'}}>Nenhum template ainda</h3>
-          <p className="muted" style={{marginBottom:16, maxWidth:520, marginLeft:'auto', marginRight:'auto', fontSize:13.5}}>
-            Suba um <code>.docx</code> com placeholders Jinja como <code>{`{{ empresa.razao_social }}`}</code>, <code>{`{{ deal.valor }}`}</code>, <code>{`{{ contato.nome }}`}</code>. O sistema preenche automaticamente quando você gerar contratos/propostas a partir de um deal.
-          </p>
-          <button className="btn btn-accent btn-sm" onClick={()=>setShowUpload(true)}>
-            <I.plus size={12}/>Subir primeiro template
-          </button>
+        <div className="card">
+          <EmptyState
+            icon={<I.doc size={22}/>}
+            title="Nenhum template ainda"
+            description="Suba um .docx com placeholders Jinja ({{ empresa.razao_social }}, {{ deal.valor }}, etc) — o sistema preenche automaticamente ao gerar contratos/propostas a partir de um deal."
+            action={<button className="btn btn-accent btn-sm" onClick={()=>setShowUpload(true)}><I.plus size={11}/>Subir primeiro template</button>}
+          />
         </div>
       )}
 

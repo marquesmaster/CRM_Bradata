@@ -138,6 +138,72 @@ if (!document.getElementById('sk-anim')) {
   document.head.appendChild(s);
 }
 
+// ============ EmptyState (vazio com ícone, título, descrição e CTA opcional) ============
+function EmptyState({ icon, title, description, action, compact }) {
+  const pad = compact ? '32px 20px' : '56px 24px';
+  return (
+    <div style={{padding: pad, textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center', gap:8}}>
+      <div style={{
+        width: compact ? 44 : 56, height: compact ? 44 : 56,
+        borderRadius: '50%',
+        background: 'hsl(var(--surface-2))',
+        display: 'grid', placeItems: 'center',
+        color: 'hsl(var(--fg-muted))',
+        marginBottom: 4,
+      }}>
+        {icon || <I.search size={compact ? 18 : 22}/>}
+      </div>
+      {title && <h3 style={{margin:0, fontSize: compact ? 14 : 15.5, fontWeight:700}}>{title}</h3>}
+      {description && (
+        <p style={{margin:0, color:'hsl(var(--fg-muted))', fontSize:12.5, maxWidth:380, lineHeight:1.55}}>
+          {description}
+        </p>
+      )}
+      {action && <div style={{marginTop:8}}>{action}</div>}
+    </div>
+  );
+}
+window.EmptyState = EmptyState;
+
+// ============ TableLoading (linhas de skeleton dentro de <tbody>) ============
+function TableLoading({ rows = 5, cols = 4 }) {
+  return Array.from({ length: rows }, (_, r) => (
+    <tr key={r}>
+      {Array.from({ length: cols }, (_, c) => (
+        <td key={c} style={{padding:'12px 14px'}}>
+          <Skeleton height={14} width={c === 0 ? '70%' : c === cols - 1 ? '40%' : '85%'}/>
+        </td>
+      ))}
+    </tr>
+  ));
+}
+window.TableLoading = TableLoading;
+
+// ============ LoadingDots (3 pontos animados, inline) ============
+function LoadingDots({ size = 6, color }) {
+  const dot = (delay) => ({
+    width: size, height: size, borderRadius: '50%',
+    background: color ? `hsl(var(--${color}))` : 'currentColor',
+    opacity: .6,
+    animation: `ld-bounce 1.2s ${delay}s infinite ease-in-out`,
+  });
+  return (
+    <span style={{display:'inline-flex', gap: 4, alignItems:'center', color:'hsl(var(--fg-muted))'}}>
+      <span style={dot(0)}/>
+      <span style={dot(.15)}/>
+      <span style={dot(.3)}/>
+    </span>
+  );
+}
+window.LoadingDots = LoadingDots;
+
+if (!document.getElementById('ld-anim')) {
+  const s = document.createElement('style');
+  s.id = 'ld-anim';
+  s.textContent = '@keyframes ld-bounce { 0%,80%,100%{opacity:.3; transform:translateY(0)} 40%{opacity:1; transform:translateY(-3px)} }';
+  document.head.appendChild(s);
+}
+
 // ============ Toast ============
 const _toastListeners = new Set();
 window.toast = {

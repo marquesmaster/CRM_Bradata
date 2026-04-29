@@ -221,8 +221,19 @@ function Accounts() {
           </tr></thead>
           <tbody>
             {pageItems.length === 0 && (
-              <tr><td colSpan="10" style={{textAlign:'center', padding:40, color:'hsl(var(--fg-muted))'}}>
-                {q || activeCount > 0 ? 'Nenhum fornecedor com esses filtros.' : 'Nenhum fornecedor ainda. Rode um ETL PNCP.'}
+              <tr><td colSpan="10" style={{padding:0}}>
+                <EmptyState
+                  icon={<I.building size={22}/>}
+                  title={q || activeCount > 0 ? 'Nenhum fornecedor com esses filtros' : 'Nenhum fornecedor ainda'}
+                  description={q || activeCount > 0
+                    ? 'Tente afrouxar a busca ou limpar os filtros ativos.'
+                    : 'Dispare um ETL PNCP em Execuções para descobrir fornecedores automaticamente.'}
+                  action={!(q || activeCount > 0) && (
+                    <button className="btn btn-accent btn-sm" onClick={() => window.__nav('execucoes')}>
+                      <I.refresh size={11}/>Ir para Execuções
+                    </button>
+                  )}
+                />
               </td></tr>
             )}
             {pageItems.map(f => {

@@ -72,14 +72,20 @@ function Automacoes() {
         </div>
       </div>
 
-      {loading && <div style={{padding:40, textAlign:'center'}} className="muted">Carregando…</div>}
+      {loading && (
+        <div className="card" style={{padding:18, display:'flex', flexDirection:'column', gap:10}}>
+          {Array.from({length:4}).map((_,i) => <Skeleton key={i} height={64}/>)}
+        </div>
+      )}
 
       {!loading && items.length === 0 && (
-        <div className="card empty-state" style={{padding:60, textAlign:'center'}}>
-          <div style={{fontSize:40, marginBottom:12}}>⚡</div>
-          <h3 style={{margin:'0 0 6px'}}>Nenhuma automação</h3>
-          <p className="muted" style={{marginBottom:16}}>Crie templates de e-mail, alertas de SLA ou cadências de follow-up.</p>
-          <button className="btn btn-accent btn-sm" onClick={()=>setEditing({})}><I.plus size={12}/>Criar primeira</button>
+        <div className="card">
+          <EmptyState
+            icon={<I.zap size={22}/>}
+            title="Nenhuma automação"
+            description="Crie templates de e-mail, alertas de SLA ou cadências de follow-up."
+            action={<button className="btn btn-accent btn-sm" onClick={()=>setEditing({})}><I.plus size={11}/>Criar primeira</button>}
+          />
         </div>
       )}
 
@@ -259,7 +265,7 @@ function SequencerModal({ cadencia, onClose }) {
         </div>
 
         <div style={{flex:1, overflowY:'auto'}}>
-          {loading && <div className="muted" style={{padding:32, textAlign:'center'}}>Carregando…</div>}
+          {loading && <LoadingDots/>}
           {!loading && filtered.length === 0 && (
             <div className="muted" style={{padding:32, textAlign:'center'}}>
               {filter === 'all' ? 'Nenhum contato elegível com os filtros atuais da cadência.' : 'Nenhum contato neste estado.'}

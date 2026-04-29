@@ -92,7 +92,14 @@ function Pipeline() {
       </div>
 
       {loading && deals.length === 0 && (
-        <div className="muted" style={{textAlign:'center', padding:32}}>Carregando…</div>
+        <div style={{display:'flex', gap:'var(--gap)', padding:'8px 0'}}>
+          {Array.from({length:4}).map((_,i) => (
+            <div key={i} className="card" style={{flex:1, padding:14, display:'flex', flexDirection:'column', gap:8, minWidth:200}}>
+              <Skeleton height={16} width="60%"/>
+              {Array.from({length:3}).map((_,j) => <Skeleton key={j} height={56}/>)}
+            </div>
+          ))}
+        </div>
       )}
 
       <div className="kanban">

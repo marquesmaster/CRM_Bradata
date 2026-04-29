@@ -58,12 +58,19 @@ function Contratos() {
             <th>Contrato</th><th>Órgão</th><th>UF</th><th>Modalidade</th><th>Valor</th><th>Assinatura</th><th>IA</th><th></th>
           </tr></thead>
           <tbody>
-            {loading && items.length === 0 && (
-              <tr><td colSpan="8" style={{textAlign:'center', padding:32, color:'hsl(var(--fg-muted))'}}>Carregando…</td></tr>
-            )}
+            {loading && items.length === 0 && <TableLoading rows={8} cols={8}/>}
             {!loading && items.length === 0 && (
-              <tr><td colSpan="8" style={{textAlign:'center', padding:32, color:'hsl(var(--fg-muted))'}}>
-                Nenhum contrato. Dispare um ETL em "Execuções".
+              <tr><td colSpan="8" style={{padding:0}}>
+                <EmptyState
+                  icon={<I.doc size={22}/>}
+                  title="Nenhum contrato encontrado"
+                  description={q || uf ? "Ajuste os filtros para ampliar a busca." : "Nenhum contrato ainda. Dispare uma ingestão em Execuções."}
+                  action={!q && !uf && (
+                    <button className="btn btn-accent btn-sm" onClick={() => window.__nav('execucoes')}>
+                      <I.refresh size={11}/>Ir para Execuções
+                    </button>
+                  )}
+                />
               </td></tr>
             )}
             {items.map(c => (
@@ -132,7 +139,15 @@ function ContratoDetail({ contratoId, onBack }) {
     } catch (e) { window.toast.error(e.message); }
   };
 
-  if (loading) return <div style={{padding:40, textAlign:'center', color:'hsl(var(--fg-muted))'}}>Carregando…</div>;
+  if (loading) return (
+    <div className="card" style={{padding:24, display:'flex', flexDirection:'column', gap:12}}>
+      <Skeleton height={28} width="60%"/>
+      <Skeleton height={14} width="40%"/>
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginTop:8}}>
+        {Array.from({length:8}).map((_,i) => <Skeleton key={i} height={36}/>)}
+      </div>
+    </div>
+  );
   if (err) return <div className="card" style={{padding:20, color:'hsl(var(--danger))'}}>{err}</div>;
   if (!c) return null;
 

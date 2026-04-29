@@ -60,8 +60,12 @@ function Prospeccao() {
             <th>Empresa</th><th>Origem</th><th>Status</th><th>Score</th><th>Owner</th><th>Criado</th><th></th>
           </tr></thead>
           <tbody>
-            {loading && items.length===0 && <tr><td colSpan="7" style={{textAlign:'center', padding:32, color:'hsl(var(--fg-muted))'}}>Carregando…</td></tr>}
-            {!loading && items.length===0 && <tr><td colSpan="7" style={{textAlign:'center', padding:32, color:'hsl(var(--fg-muted))'}}>Nenhum lead com esses filtros.</td></tr>}
+            {loading && items.length === 0 && <TableLoading rows={5} cols={7}/>}
+            {!loading && items.length === 0 && (
+              <tr><td colSpan="7" style={{padding:0}}>
+                <EmptyState icon={<I.target size={22}/>} title="Nenhum lead encontrado" description="Ajuste os filtros ou rode uma ingestão PNCP em Execuções para popular o pipeline."/>
+              </td></tr>
+            )}
             {items.map(l => {
               const c = empresas[String(l.empresa_id)];
               return (
@@ -115,7 +119,13 @@ function ProspeccaoDetail({ leadId, onBack }) {
     } catch (e) { window.toast.error(e.message); }
   };
 
-  if (loading) return <div style={{padding:40, textAlign:'center'}}>Carregando…</div>;
+  if (loading) return (
+    <div className="card" style={{padding:24, display:'flex', flexDirection:'column', gap:12}}>
+      <Skeleton height={28} width="55%"/>
+      <Skeleton height={14} width="35%"/>
+      {Array.from({length:6}).map((_,i) => <Skeleton key={i} height={42}/>)}
+    </div>
+  );
   if (!lead) return <div className="card" style={{padding:20}}>Lead não encontrado. <button className="btn btn-xs btn-ghost" onClick={onBack}>Voltar</button></div>;
 
   const c = COMPANIES[String(lead.empresa_id)];

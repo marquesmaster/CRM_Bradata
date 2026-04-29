@@ -81,8 +81,18 @@ function HistoricoGlobal() {
       </div>
 
       <div className="card">
-        {loading && <div className="muted" style={{padding:24, textAlign:'center'}}>Carregando…</div>}
-        {!loading && items.length === 0 && <div className="muted" style={{padding:32, textAlign:'center'}}>Nenhum evento com esses filtros.</div>}
+        {loading && (
+          <div style={{padding:'14px 18px', display:'flex', flexDirection:'column', gap:8}}>
+            {Array.from({length:8}).map((_,i) => <Skeleton key={i} height={32}/>)}
+          </div>
+        )}
+        {!loading && items.length === 0 && (
+          <EmptyState
+            icon={<I.clock size={22}/>}
+            title="Nenhum evento"
+            description="Tente ajustar os filtros — toda ação relevante (criação, edição, exclusão, restauração) é registrada aqui."
+          />
+        )}
         {!loading && items.length > 0 && (
           <table className="table">
             <thead><tr>

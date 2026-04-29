@@ -77,7 +77,12 @@ function GoogleConnectCard() {
     }
   };
 
-  if (loading) return <div className="card"><div className="card-p"><div className="muted">Carregando…</div></div></div>;
+  if (loading) return (
+    <div className="card" style={{padding:24, display:'flex', flexDirection:'column', gap:14}}>
+      <Skeleton height={20} width="40%"/>
+      {Array.from({length:5}).map((_,i) => <Skeleton key={i} height={40}/>)}
+    </div>
+  );
 
   const connected = status?.connected;
   const configured = status?.configured;

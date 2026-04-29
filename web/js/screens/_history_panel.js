@@ -12,8 +12,12 @@ function EntityHistoryPanel({ entityType, entityId, title }) {
       .finally(()=>setLoading(false));
   }, [entityType, entityId]);
 
-  if (loading) return <div className="muted" style={{padding:14, fontSize:12}}>Carregando histórico…</div>;
-  if (items.length === 0) return <div className="muted" style={{padding:14, fontSize:12}}>Sem eventos no histórico.</div>;
+  if (loading) return (
+    <div style={{padding:'10px 14px', display:'flex', flexDirection:'column', gap:8}}>
+      {Array.from({length:4}).map((_,i) => <Skeleton key={i} height={28}/>)}
+    </div>
+  );
+  if (items.length === 0) return <div className="muted" style={{padding:14, fontSize:12, textAlign:'center'}}>Sem eventos no histórico.</div>;
 
   return (
     <div style={{borderTop:'1px solid hsl(var(--border))', paddingTop:12, marginTop:6}}>
